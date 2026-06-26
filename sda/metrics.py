@@ -86,6 +86,9 @@ class MetricSeries:
     def __init__(self, rows: Iterable[MetricRow]) -> None:
         self._rows = tuple(rows)
 
+    def rows(self) -> list[MetricRow]:
+        return list(self._rows)
+
     def values(self) -> np.ndarray:
         return np.asarray([row.value for row in self._rows], dtype=float)
 
@@ -97,6 +100,100 @@ class MetricSeries:
 
     def trajectory_level(self) -> "MetricSeries":
         return MetricSeries(row for row in self._rows if row.level == "trajectory")
+
+    def to_trajectory_matrix(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """Return step observations as scenario ids, times, and a value matrix."""
+        step_rows = tuple(row for row in self._rows if row.level == "step")
+        if not step_rows:
+            return (
+                np.asarray([], dtype=int),
+                np.asarray([], dtype=int),
+                np.empty((0, 0), dtype=float),
+            )
+
+        if any(row.scenario_id is None or row.t is None for row in step_rows):
+            raise ValueError(
+                "trajectory matrix requires scenario_id and t on every step row"
+            )
+
+        scenario_ids = np.asarray(
+            sorted({int(row.scenario_id) for row in step_rows}),
+            dtype=int,
+        )
+        times = np.asarray(
+            sorted({int(row.t) for row in step_rows}),
+            dtype=int,
+        )
+        scenario_index = {
+            scenario_id: index for index, scenario_id in enumerate(scenario_ids)
+        }
+        time_index = {t: index for index, t in enumerate(times)}
+        values = np.full((len(scenario_ids), len(times)), np.nan, dtype=float)
+
+        seen: set[tuple[int, int]] = set()
+        for row in step_rows:
+            scenario_id = int(row.scenario_id)
+            t = int(row.t)
+            key = (scenario_id, t)
+            if key in seen:
+                raise ValueError(
+                    "trajectory matrix received duplicate values for "
+                    f"scenario_id={scenario_id}, t={t}"
+                )
+            seen.add(key)
+            values[scenario_index[scenario_id], time_index[t]] = row.value
+
+        return scenario_ids, times, values
+
+    def plot_trajectories(
+        self,
+        ax=None,
+        *,
+        max_trajectories: int | None = None,
+        mean: bool = True,
+        mean_label: str = "mean",
+        alpha: float = 0.25,
+        linewidth: float = 1.0,
+        **plot_kwargs,
+    ):
+        """Plot each scenario path for a step-level metric series."""
+        try:
+            import matplotlib.pyplot as plt
+        except ImportError as exc:
+            raise ImportError(
+                "matplotlib is required for trajectory plots. "
+                "Install it or run with `uv run --with matplotlib ...`."
+            ) from exc
+
+        _, times, values = self.to_trajectory_matrix()
+        if values.size == 0:
+            raise ValueError("no step-level rows available for trajectory plot")
+        if max_trajectories is not None:
+            if max_trajectories <= 0:
+                raise ValueError("max_trajectories must be positive")
+            values = values[:max_trajectories]
+
+        if ax is None:
+            _, ax = plt.subplots()
+
+        plot_kwargs.setdefault("color", "C0")
+        for trajectory in values:
+            ax.plot(times, trajectory, alpha=alpha, linewidth=linewidth, **plot_kwargs)
+
+        if mean:
+            ax.plot(
+                times,
+                np.nanmean(values, axis=0),
+                color="black",
+                linewidth=2.0,
+                label=mean_label,
+            )
+            ax.legend()
+
+        metric_name = self._rows[0].name if self._rows else "value"
+        ax.set_xlabel("time")
+        ax.set_ylabel(metric_name)
+        return ax
 
     def mean(self) -> float:
         return float(np.mean(self.values())) if self._rows else float("nan")
