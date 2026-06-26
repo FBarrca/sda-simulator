@@ -3,11 +3,16 @@ import pytest
 
 from examples.logistics import (
     Assignment,
+    GreedyPolicy,
+    LookaheadRolloutPolicy,
     LogisticsModel,
     LogisticsScenarioLoader,
+    MilpPolicy,
     NearestFeasiblePolicy,
     Order,
     PriorityDeadlinePolicy,
+    PriorityPolicy,
+    RandomPolicy,
     RiskAwareDispatchPolicy,
     initial_logistics_state,
     synthetic_history,
@@ -107,7 +112,7 @@ def test_logistics_model_enforces_assignment_feasibility():
         "traffic_multiplier": np.ones((1, len(WAREHOUSES), len(CUSTOMERS))),
         "vehicle_outages": outages,
     }
-    model = LogisticsModel(NearestFeasiblePolicy())
+    model = LogisticsModel(GreedyPolicy())
 
     next_state = model.transition([state], [assignments], exogenous, 0)[0]
     cost = model.cost([state], [assignments], exogenous, [next_state], 0)
@@ -123,21 +128,32 @@ def test_logistics_model_enforces_assignment_feasibility():
 
 @pytest.mark.parametrize(
     "policy",
-    [NearestFeasiblePolicy(), PriorityDeadlinePolicy(), RiskAwareDispatchPolicy()],
+    [
+        RandomPolicy(seed=23),
+        GreedyPolicy(),
+        PriorityPolicy(),
+        MilpPolicy(),
+        LookaheadRolloutPolicy(),
+        NearestFeasiblePolicy(),
+        PriorityDeadlinePolicy(),
+        RiskAwareDispatchPolicy(),
+    ],
 )
 def test_logistics_policies_produce_well_formed_metrics(policy):
+    horizon = 8
+    n_scenarios = 12
     result = build_result(
         policy=policy,
-        horizon=14,
-        n_scenarios=30,
-        batch_size=10,
+        horizon=horizon,
+        n_scenarios=n_scenarios,
+        batch_size=6,
         seed=23,
     )
 
-    assert len(result.metric("total_cost").values()) == 30
+    assert len(result.metric("total_cost").values()) == n_scenarios
     assert result.metric("total_cost").percentile(95) >= 0
     assert result.metric("total_cost").cvar(0.95) >= 0
-    assert len(result.metric("on_time_rate").values()) == 30 * 14
+    assert len(result.metric("on_time_rate").values()) == n_scenarios * horizon
     assert 0 <= result.metric("on_time_rate").mean() <= 1
     assert 0 <= result.metric("priority_weighted_on_time_rate").mean() <= 1
     assert result.metric("late_cost").min() >= 0

@@ -11,7 +11,7 @@ from examples.logistics.metrics import (
     VehicleUtilizationMetric,
 )
 from examples.logistics.models import LogisticsModel
-from examples.logistics.policies import RiskAwareDispatchPolicy
+from examples.logistics.policies import PriorityPolicy
 from sda import SimulationResult, Simulator, StepCostMetric, TotalCostMetric
 
 
@@ -43,7 +43,7 @@ def build_result(
         batch_size=batch_size,
         seed=seed,
     )
-    model = LogisticsModel(policy=policy or RiskAwareDispatchPolicy())
+    model = LogisticsModel(policy=policy or PriorityPolicy())
     simulator = Simulator(metrics=logistics_metrics())
     return simulator.evaluate(model, scenarios)
 

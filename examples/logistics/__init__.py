@@ -21,9 +21,15 @@ from examples.logistics.metrics import (
 from examples.logistics.models import LogisticsModel
 from examples.logistics.network import CUSTOMERS, SKUS, VEHICLES, WAREHOUSES
 from examples.logistics.policies import (
+    GreedyPolicy,
+    LookaheadRolloutPolicy,
+    MilpPolicy,
     NearestFeasiblePolicy,
     PriorityDeadlinePolicy,
+    PriorityPolicy,
+    RandomPolicy,
     RiskAwareDispatchPolicy,
+    SyntheticRolloutSampler,
 )
 
 __all__ = [
@@ -31,19 +37,25 @@ __all__ = [
     "CUSTOMERS",
     "DispatchCostMetric",
     "DispatchedOrderMetric",
+    "GreedyPolicy",
     "LateCostMetric",
+    "LookaheadRolloutPolicy",
     "LogisticsModel",
     "LogisticsScenarioLoader",
     "LogisticsState",
+    "MilpPolicy",
     "NearestFeasiblePolicy",
     "OnTimeRateMetric",
     "Order",
     "OrderOutcome",
     "PendingBacklogMetric",
     "PriorityDeadlinePolicy",
+    "PriorityPolicy",
     "PriorityWeightedOnTimeMetric",
+    "RandomPolicy",
     "RiskAwareDispatchPolicy",
     "SKUS",
+    "SyntheticRolloutSampler",
     "SyntheticHistory",
     "VEHICLES",
     "VehicleState",

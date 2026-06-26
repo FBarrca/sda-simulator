@@ -46,6 +46,9 @@ class LogisticsModel(SDAModel):
         self.invalid_assignment_cost = float(invalid_assignment_cost)
         self._last_cost: np.ndarray | None = None
         self._last_info: dict[str, np.ndarray] | None = None
+        bind_rollout_model = getattr(policy, "bind_rollout_model", None)
+        if callable(bind_rollout_model):
+            bind_rollout_model(self)
 
     def initial_state(self, batch: ScenarioBatch) -> list[LogisticsState]:
         return [clone_state(state) for state in batch.initial_state]
