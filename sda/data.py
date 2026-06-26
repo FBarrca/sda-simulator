@@ -9,13 +9,20 @@ import numpy as np
 
 @dataclass(frozen=True)
 class ScenarioBatch:
-    """A batch of independent futures for sequential simulation."""
+    """A batch of independent future paths for simulation.
+
+    ``initial_state`` is the model's starting state for each scenario in the
+    batch. ``exogenous`` maps input names to arrays shaped
+    ``[batch_size, horizon, ...]``. ``scenario_ids`` identifies the scenarios
+    represented by the first dimension of each exogenous array.
+    """
 
     initial_state: Any
     exogenous: Mapping[str, Any]
     scenario_ids: Sequence[int]
 
     def __post_init__(self) -> None:
+        """Validate batch size and horizon consistency across exogenous paths."""
         scenario_count = len(self.scenario_ids)
         if scenario_count == 0:
             raise ValueError("scenario_ids must contain at least one scenario")
@@ -45,23 +52,32 @@ class ScenarioBatch:
 
     @property
     def batch_size(self) -> int:
+        """Return the number of scenarios in this batch."""
         return len(self.scenario_ids)
 
     @property
     def horizon(self) -> int:
+        """Return the number of time periods in this batch."""
         first_path = next(iter(self.exogenous.values()))
         return int(np.asarray(first_path).shape[1])
 
 
 class ScenarioLoader:
-    """Produces batches of exogenous futures."""
+    """Base interface for objects that produce scenario batches."""
 
     def __iter__(self) -> Iterator[ScenarioBatch]:
+        """Yield ``ScenarioBatch`` objects for a simulation run."""
         raise NotImplementedError
 
 
 class ArrayScenarioLoader(ScenarioLoader):
-    """Scenario loader backed by batch-first NumPy-compatible arrays."""
+    """Scenario loader backed by NumPy-compatible arrays.
+
+    Use this loader when all scenario paths are already available in memory.
+    Each exogenous value must be array-like with shape
+    ``[n_scenarios, horizon, ...]``. The loader slices those arrays into
+    ``ScenarioBatch`` objects of at most ``batch_size`` scenarios.
+    """
 
     def __init__(
         self,
@@ -70,6 +86,22 @@ class ArrayScenarioLoader(ScenarioLoader):
         batch_size: int,
         scenario_ids: Sequence[int] | None = None,
     ) -> None:
+        """Create an array-backed scenario loader.
+
+        Parameters
+        ----------
+        initial_state
+            Starting state for the model. It may be a scalar, a vector with one
+            entry per scenario, or a mapping whose values follow the same rule.
+        exogenous
+            Mapping from input name to array-like future paths shaped
+            ``[n_scenarios, horizon, ...]``.
+        batch_size
+            Maximum number of scenarios yielded in each batch.
+        scenario_ids
+            Optional scenario identifiers. When omitted, scenarios are numbered
+            from ``0`` to ``n_scenarios - 1``.
+        """
         if batch_size <= 0:
             raise ValueError("batch_size must be positive")
         if not exogenous:
@@ -81,7 +113,9 @@ class ArrayScenarioLoader(ScenarioLoader):
 
         first_path = next(iter(self.exogenous.values()))
         if first_path.ndim < 2:
-            raise ValueError("exogenous paths must have shape [n_scenarios, horizon, ...]")
+            raise ValueError(
+                "exogenous paths must have shape [n_scenarios, horizon, ...]"
+            )
 
         self.n_scenarios = int(first_path.shape[0])
         self.horizon = int(first_path.shape[1])
@@ -106,10 +140,13 @@ class ArrayScenarioLoader(ScenarioLoader):
             self.scenario_ids = np.arange(self.n_scenarios)
         else:
             if len(scenario_ids) != self.n_scenarios:
-                raise ValueError("scenario_ids length must match exogenous scenario count")
+                raise ValueError(
+                    "scenario_ids length must match exogenous scenario count"
+                )
             self.scenario_ids = np.asarray(scenario_ids)
 
     def __iter__(self) -> Iterator[ScenarioBatch]:
+        """Yield consecutive scenario batches from the stored arrays."""
         for start in range(0, self.n_scenarios, self.batch_size):
             stop = min(start + self.batch_size, self.n_scenarios)
             yield ScenarioBatch(
@@ -125,6 +162,12 @@ class ArrayScenarioLoader(ScenarioLoader):
 
 
 def _slice_initial_state(value: Any, start: int, stop: int, n_scenarios: int) -> Any:
+    """Slice or broadcast an initial-state value for one scenario batch.
+
+    Scalars are broadcast to the current batch length. Mappings are processed
+    recursively. Array-like values must have one entry per original scenario
+    and are sliced along their first dimension.
+    """
     if isinstance(value, Mapping):
         return {
             key: _slice_initial_state(item, start, stop, n_scenarios)

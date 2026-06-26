@@ -13,6 +13,13 @@ MetricLevel = Literal["step", "trajectory"]
 
 @dataclass(frozen=True)
 class MetricRow:
+    """One stored metric observation.
+
+    ``scenario_id`` and ``t`` are present for normal per-scenario step metrics.
+    Trajectory metrics usually have a ``scenario_id`` and no time index.
+    Aggregate metrics can leave ``scenario_id`` as ``None``.
+    """
+
     name: str
     value: float
     scenario_id: int | None
@@ -21,9 +28,10 @@ class MetricRow:
 
 
 class MetricStore:
-    """In-memory raw metric observation store."""
+    """In-memory store for raw metric observations."""
 
     def __init__(self) -> None:
+        """Create an empty metric store."""
         self._rows: list[MetricRow] = []
 
     def log(
@@ -34,6 +42,23 @@ class MetricStore:
         t: int | None = None,
         level: MetricLevel = "step",
     ) -> None:
+        """Append one metric observation or one value per scenario.
+
+        Parameters
+        ----------
+        name
+            Metric name used later with ``SimulationResult.metric(name)``.
+        values
+            Scalar value or one-dimensional array-like values. Scalars are
+            broadcast when ``scenario_ids`` are provided.
+        scenario_ids
+            Optional scenario ids aligned with ``values``.
+        t
+            Optional time index for step-level values.
+        level
+            ``"step"`` for per-period values or ``"trajectory"`` for
+            whole-scenario values.
+        """
         if level not in {"step", "trajectory"}:
             raise ValueError("level must be 'step' or 'trajectory'")
 
@@ -71,12 +96,15 @@ class MetricStore:
         )
 
     def metric(self, name: str) -> "MetricSeries":
+        """Return a queryable series containing rows with ``name``."""
         return MetricSeries(row for row in self._rows if row.name == name)
 
     def names(self) -> list[str]:
+        """Return metric names in the order they were first logged."""
         return list(dict.fromkeys(row.name for row in self._rows))
 
     def rows(self) -> list[MetricRow]:
+        """Return a copy of all raw metric rows."""
         return list(self._rows)
 
 
@@ -84,25 +112,37 @@ class MetricSeries:
     """Queryable distribution over stored metric observations."""
 
     def __init__(self, rows: Iterable[MetricRow]) -> None:
+        """Create a series from metric rows."""
         self._rows = tuple(rows)
 
     def rows(self) -> list[MetricRow]:
+        """Return a copy of the raw rows in this series."""
         return list(self._rows)
 
     def values(self) -> np.ndarray:
+        """Return metric values as a one-dimensional float array."""
         return np.asarray([row.value for row in self._rows], dtype=float)
 
     def at_time(self, t: int) -> "MetricSeries":
+        """Return only observations recorded at time ``t``."""
         return MetricSeries(row for row in self._rows if row.t == t)
 
     def step_level(self) -> "MetricSeries":
+        """Return only step-level observations."""
         return MetricSeries(row for row in self._rows if row.level == "step")
 
     def trajectory_level(self) -> "MetricSeries":
+        """Return only trajectory-level observations."""
         return MetricSeries(row for row in self._rows if row.level == "trajectory")
 
     def to_trajectory_matrix(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-        """Return step observations as scenario ids, times, and a value matrix."""
+        """Return step observations as scenario ids, times, and a value matrix.
+
+        The returned tuple is ``(scenario_ids, times, values)`` where
+        ``values[i, j]`` is the metric value for ``scenario_ids[i]`` at
+        ``times[j]``. Missing scenario-time combinations are filled with
+        ``nan``.
+        """
         step_rows = tuple(row for row in self._rows if row.level == "step")
         if not step_rows:
             return (
@@ -156,7 +196,12 @@ class MetricSeries:
         linewidth: float = 1.0,
         **plot_kwargs,
     ):
-        """Plot each scenario path for a step-level metric series."""
+        """Plot each scenario path for a step-level metric series.
+
+        Parameters are passed to Matplotlib line plots. Set
+        ``max_trajectories`` to limit clutter, and set ``mean=False`` to hide
+        the average trajectory overlay.
+        """
         try:
             import matplotlib.pyplot as plt
         except ImportError as exc:
@@ -196,28 +241,39 @@ class MetricSeries:
         return ax
 
     def mean(self) -> float:
+        """Return the arithmetic mean, or ``nan`` for an empty series."""
         return float(np.mean(self.values())) if self._rows else float("nan")
 
     def std(self) -> float:
+        """Return the population standard deviation, or ``nan`` if empty."""
         return float(np.std(self.values())) if self._rows else float("nan")
 
     def min(self) -> float:
+        """Return the minimum value, or ``nan`` for an empty series."""
         return float(np.min(self.values())) if self._rows else float("nan")
 
     def max(self) -> float:
+        """Return the maximum value, or ``nan`` for an empty series."""
         return float(np.max(self.values())) if self._rows else float("nan")
 
     def quantile(self, q: float) -> float:
+        """Return the ``q`` quantile where ``q`` is between 0 and 1."""
         if not 0 <= q <= 1:
             raise ValueError("q must be between 0 and 1")
         return float(np.quantile(self.values(), q)) if self._rows else float("nan")
 
     def percentile(self, p: float) -> float:
+        """Return the ``p`` percentile where ``p`` is between 0 and 100."""
         if not 0 <= p <= 100:
             raise ValueError("p must be between 0 and 100")
         return self.quantile(p / 100)
 
     def cvar(self, alpha: float = 0.95) -> float:
+        """Return conditional value at risk for the upper tail.
+
+        ``alpha`` is the quantile threshold. For cost metrics, this is the mean
+        of the worst observations at or above that threshold.
+        """
         if not 0 <= alpha <= 1:
             raise ValueError("alpha must be between 0 and 1")
         if not self._rows:
@@ -229,6 +285,7 @@ class MetricSeries:
         return float(np.mean(tail))
 
     def summary(self) -> dict[str, float]:
+        """Return common distribution summary statistics."""
         values = self.values()
         if len(values) == 0:
             return {
@@ -257,12 +314,21 @@ class MetricSeries:
 
 
 class Metric:
+    """Base class for custom simulation metrics.
+
+    Subclasses set ``name`` and override one or both hooks. Step metrics read
+    from ``StepRecord`` after each period. Trajectory metrics read from
+    ``TrajectoryRecord`` after a scenario batch finishes.
+    """
+
     name: str
 
     def on_step(self, step: StepRecord, store: MetricStore) -> None:
+        """Record observations from one simulated step."""
         pass
 
     def on_trajectory(self, trajectory: TrajectoryRecord, store: MetricStore) -> None:
+        """Record observations from one completed trajectory batch."""
         pass
 
 
@@ -270,6 +336,7 @@ class MetricSet:
     """Dispatches records to a group of metrics."""
 
     def __init__(self, metrics: Iterable[Metric] | None = None) -> None:
+        """Create a metric set and reject duplicate metric names."""
         self.metrics = list(metrics or [])
         names = [metric.name for metric in self.metrics]
         duplicates = sorted({name for name in names if names.count(name) > 1})
@@ -277,18 +344,23 @@ class MetricSet:
             raise ValueError(f"duplicate metric names: {duplicates}")
 
     def on_step(self, step: StepRecord, store: MetricStore) -> None:
+        """Send a step record to every metric in the set."""
         for metric in self.metrics:
             metric.on_step(step, store)
 
     def on_trajectory(self, trajectory: TrajectoryRecord, store: MetricStore) -> None:
+        """Send a trajectory record to every metric in the set."""
         for metric in self.metrics:
             metric.on_trajectory(trajectory, store)
 
 
 class StepCostMetric(Metric):
+    """Built-in step metric that logs the model's per-period cost vector."""
+
     name = "step_cost"
 
     def on_step(self, step: StepRecord, store: MetricStore) -> None:
+        """Record ``step.cost`` for each scenario at ``step.t``."""
         store.log(
             name=self.name,
             values=step.cost,
@@ -299,9 +371,12 @@ class StepCostMetric(Metric):
 
 
 class TotalCostMetric(Metric):
+    """Built-in trajectory metric that logs total cost per scenario."""
+
     name = "total_cost"
 
     def on_trajectory(self, trajectory: TrajectoryRecord, store: MetricStore) -> None:
+        """Record ``trajectory.total_cost`` for each scenario."""
         store.log(
             name=self.name,
             values=trajectory.total_cost,

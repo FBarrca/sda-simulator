@@ -11,15 +11,41 @@ from sda.model import SDAModel, StepRecord, TrajectoryRecord
 
 
 class SimulationResult:
-    """Result wrapper exposing metric distributions and summaries."""
+    """Access point for metrics produced by a simulation run.
+
+    ``Simulator.evaluate`` returns this wrapper after all scenario batches have
+    been rolled out. Use :meth:`metric` to inspect one metric distribution or
+    :meth:`summary` to get summary statistics for every recorded metric.
+    """
 
     def __init__(self, store: MetricStore) -> None:
+        """Create a result around the metric observations in ``store``."""
         self.store = store
 
     def metric(self, name: str) -> MetricSeries:
+        """Return the recorded observations for one metric name.
+
+        Parameters
+        ----------
+        name
+            Metric name, for example ``"step_cost"`` or ``"total_cost"``.
+
+        Returns
+        -------
+        MetricSeries
+            A queryable series. If no observations were recorded for ``name``,
+            the series is empty and summary methods return ``nan`` values where
+            appropriate.
+        """
         return self.store.metric(name)
 
     def summary(self) -> dict[str, dict[str, float]]:
+        """Return summary statistics for every metric in the result.
+
+        Each key is a metric name and each value is the dictionary returned by
+        ``MetricSeries.summary()``, including count, mean, standard deviation,
+        percentiles, and min/max.
+        """
         return {
             name: self.metric(name).summary()
             for name in self.store.names()
@@ -27,17 +53,58 @@ class SimulationResult:
 
 
 class Simulator:
-    """Generic sequential decision rollout engine."""
+    """Roll out sequential decision models over scenario batches.
+
+    The simulator coordinates the standard loop: initial state, policy
+    decision, transition, cost calculation, optional info capture, and metric
+    logging. It is model-agnostic; domain behavior lives in ``SDAModel`` and
+    ``Policy`` subclasses.
+    """
 
     def __init__(
         self,
         metrics: Iterable[Metric] | MetricSet | None = None,
         keep_history: bool = True,
     ) -> None:
+        """Configure a simulator.
+
+        Parameters
+        ----------
+        metrics
+            Metrics to update during each rollout. Pass ``None`` for no metrics,
+            an iterable of ``Metric`` instances, or a prebuilt ``MetricSet``.
+        keep_history
+            When ``True``, previous ``StepRecord`` objects are passed to the
+            policy and stored on each ``TrajectoryRecord``. When ``False``, the
+            policy receives an empty history list and trajectories store no
+            step records, which can reduce memory use for large simulations.
+        """
         self.metrics = metrics if isinstance(metrics, MetricSet) else MetricSet(metrics)
         self.keep_history = keep_history
 
     def evaluate(self, model: SDAModel, scenarios: ScenarioLoader) -> SimulationResult:
+        """Run ``model`` over every batch produced by ``scenarios``.
+
+        For each scenario batch, the simulator asks the model for an initial
+        state and then iterates from ``t = 0`` to ``batch.horizon - 1``. At each
+        period it slices exogenous values for that time, asks the model/policy
+        for a decision, applies the transition, computes a cost vector, records
+        step metrics, and accumulates total cost. After the batch finishes,
+        trajectory metrics are recorded.
+
+        Parameters
+        ----------
+        model
+            Sequential decision model to evaluate.
+        scenarios
+            Loader that yields ``ScenarioBatch`` objects. Exogenous arrays must
+            be shaped ``[batch_size, horizon, ...]`` inside each batch.
+
+        Returns
+        -------
+        SimulationResult
+            Queryable metrics produced during the rollout.
+        """
         store = MetricStore()
 
         for batch in scenarios:
@@ -85,6 +152,11 @@ class Simulator:
 
 
 def _exogenous_at_time(exogenous: dict[str, Any], t: int) -> dict[str, Any]:
+    """Return the current-period slice for each exogenous path.
+
+    Each path must have at least scenario and time dimensions. The returned
+    values preserve the batch dimension and drop only the time dimension.
+    """
     step_values = {}
     for name, path in exogenous.items():
         array = np.asarray(path)
@@ -95,6 +167,12 @@ def _exogenous_at_time(exogenous: dict[str, Any], t: int) -> dict[str, Any]:
 
 
 def _as_batch_vector(values: Any, batch_size: int, name: str) -> np.ndarray:
+    """Convert scalar or per-scenario values into a float vector.
+
+    Scalars are broadcast to ``batch_size``. One-dimensional values must already
+    have length ``batch_size``; higher-dimensional values are rejected so metric
+    and total-cost calculations stay aligned by scenario.
+    """
     array = np.asarray(values, dtype=float)
     if array.ndim == 0:
         return np.full(batch_size, float(array))
