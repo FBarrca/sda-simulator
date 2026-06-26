@@ -66,6 +66,15 @@ print(result.metric("inventory").at_time(5).mean())
 print(result.summary())
 ```
 
+Source-tree logistics dispatch example:
+
+```bash
+uv run -m examples.logistics
+uv run --with matplotlib -m examples.logistics.policy_comparison --output examples/logistics/logistics_policy_comparison.png
+uv run --with matplotlib -m examples.logistics.visualize_network --output examples/logistics/logistics_network.png
+uv run --with matplotlib -m examples.logistics.visualize_demand --seed 7 --days 365 --output examples/logistics/logistics_synthetic_demand.png
+```
+
 Core modules:
 
 - `sda.data`: scenario batches and array-backed loaders.
