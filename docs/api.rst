@@ -9,10 +9,27 @@ Data
 ----
 
 Use ``sda.data`` when preparing exogenous futures. ``ArrayScenarioLoader`` is
-the built-in loader for NumPy-compatible arrays. Custom loaders can implement
+the built-in loader for NumPy-compatible arrays. ``BootstrapScenarioLoader``
+and its IID, stationary, circular-block, and moving-block variants generate
+futures from historical observations. Custom loaders can implement
 ``ScenarioLoader`` and yield ``ScenarioBatch`` objects.
 
 .. automodule:: sda.data
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+.. automodule:: sda.data.core
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+.. automodule:: sda.data.array
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+.. automodule:: sda.data.bootstrap
    :members:
    :undoc-members:
    :show-inheritance:

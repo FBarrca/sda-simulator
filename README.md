@@ -9,9 +9,13 @@ Core imports:
 ```python
 from sda import (
     ArrayScenarioLoader,
+    CircularBlockBootstrap,
+    IIDBootstrap,
+    MovingBlockBootstrap,
     Policy,
     SDAModel,
     Simulator,
+    StationaryBootstrap,
     StepCostMetric,
     TotalCostMetric,
 )
@@ -77,7 +81,7 @@ uv run --with matplotlib -m examples.logistics.visualize_demand --seed 7 --days 
 
 Core modules:
 
-- `sda.data`: scenario batches and array-backed loaders.
+- `sda.data`: scenario batches, array-backed loaders, and bootstrap loaders.
 - `sda.model`: policy/model interfaces and simulation records.
 - `sda.simulation`: simulator loop and result wrapper.
 - `sda.metrics`: raw metric store, queryable metric series, and built-in cost metrics.

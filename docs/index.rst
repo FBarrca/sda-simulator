@@ -15,6 +15,7 @@ the installed library API.
    :caption: Contents
 
    concepts
+   dataloaders
    quickstart
    api
    examples
@@ -31,5 +32,6 @@ The framework separates the simulation lifecycle into small pieces:
 * ``MetricStore`` stores raw metric observations.
 * ``SimulationResult`` exposes distribution summaries, percentiles, and risk metrics.
 
-Start with :doc:`concepts` if you want the modeling vocabulary, or jump to
+Start with :doc:`concepts` if you want the modeling vocabulary, read
+:doc:`dataloaders` if you are preparing scenario data, or jump to
 :doc:`quickstart` if you want to run a minimal simulation first.

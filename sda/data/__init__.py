@@ -1,7 +1,8 @@
-"""Sequential Decision Analytics simulation framework."""
+"""Scenario data structures and loaders."""
 
-from sda.data import (
-    ArrayScenarioLoader,
+from sda.data.array import ArrayScenarioLoader
+from sda.data.bootstrap import (
+    BootstrapMethod,
     BootstrapScenarioLoader,
     CircularBlockBootstrap,
     CircularBlockBootstrapScenarioLoader,
@@ -9,47 +10,23 @@ from sda.data import (
     IIDBootstrapScenarioLoader,
     MovingBlockBootstrap,
     MovingBlockBootstrapScenarioLoader,
-    ScenarioBatch,
-    ScenarioLoader,
     StationaryBootstrap,
     StationaryBlockBootstrapScenarioLoader,
 )
-from sda.metrics import (
-    Metric,
-    MetricRow,
-    MetricSeries,
-    MetricSet,
-    MetricStore,
-    StepCostMetric,
-    TotalCostMetric,
-)
-from sda.model import Policy, SDAModel, StepRecord, TrajectoryRecord
-from sda.simulation import SimulationResult, Simulator
+from sda.data.core import ScenarioBatch, ScenarioLoader
 
 __all__ = [
     "ArrayScenarioLoader",
+    "BootstrapMethod",
     "BootstrapScenarioLoader",
     "CircularBlockBootstrap",
     "CircularBlockBootstrapScenarioLoader",
     "IIDBootstrap",
     "IIDBootstrapScenarioLoader",
-    "Metric",
-    "MetricRow",
-    "MetricSeries",
-    "MetricSet",
-    "MetricStore",
     "MovingBlockBootstrap",
     "MovingBlockBootstrapScenarioLoader",
-    "Policy",
-    "SDAModel",
     "ScenarioBatch",
     "ScenarioLoader",
-    "SimulationResult",
-    "Simulator",
     "StationaryBootstrap",
     "StationaryBlockBootstrapScenarioLoader",
-    "StepCostMetric",
-    "StepRecord",
-    "TotalCostMetric",
-    "TrajectoryRecord",
 ]
