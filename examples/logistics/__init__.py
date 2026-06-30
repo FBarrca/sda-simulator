@@ -29,8 +29,8 @@ from examples.logistics.policies import (
     PriorityPolicy,
     RandomPolicy,
     RiskAwareDispatchPolicy,
-    SyntheticRolloutSampler,
 )
+from examples.logistics.rollout import SyntheticRolloutSampler
 
 __all__ = [
     "Assignment",

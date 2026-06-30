@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-from collections.abc import Iterator, Mapping, Sequence
-from numbers import Integral
-from typing import Any, Literal
+from collections.abc import Callable, Iterator, Mapping, Sequence
+from dataclasses import dataclass
+from numbers import Integral, Real
+from typing import Any, Literal, cast
 
 import numpy as np
 
@@ -14,6 +15,28 @@ BootstrapMethod = Literal[
     "moving_block",
     "stationary_block",
 ]
+
+_VALID_METHODS: tuple[BootstrapMethod, ...] = (
+    "iid",
+    "circular_block",
+    "moving_block",
+    "stationary_block",
+)
+_FIXED_BLOCK_METHODS = {"circular_block", "moving_block"}
+_METHOD_ERROR = (
+    "method must be 'iid', 'circular_block', 'moving_block', or 'stationary_block'"
+)
+
+
+@dataclass(frozen=True)
+class _SamplingSpec:
+    n_observations: int
+    horizon: int
+    block_size: int = 1
+    average_block_size: float = 1.0
+
+
+_IndexSampler = Callable[[np.random.Generator, _SamplingSpec, int], np.ndarray]
 
 
 class BootstrapScenarioLoader(ScenarioLoader):
@@ -49,111 +72,46 @@ class BootstrapScenarioLoader(ScenarioLoader):
         seed: int | None = None,
         scenario_ids: Sequence[int] | None = None,
     ) -> None:
-        """Create a bootstrap scenario loader.
-
-        Parameters
-        ----------
-        initial_state
-            Starting state for the model. It follows the same scalar,
-            per-scenario vector, and mapping rules as ``ArrayScenarioLoader``.
-        history
-            Mapping from input name to historical observations shaped
-            ``[n_observations, ...]``.
-        horizon
-            Number of periods in each sampled future.
-        n_scenarios
-            Number of bootstrap futures to generate.
-        batch_size
-            Maximum number of scenarios yielded in each batch.
-        method
-            Bootstrap method: ``"iid"``, ``"circular_block"``,
-            ``"moving_block"``, or ``"stationary_block"``.
-        block_size
-            Fixed block length for ``"circular_block"`` or ``"moving_block"``.
-        average_block_size
-            Mean block length for ``"stationary_block"``. The corresponding
-            geometric restart probability is ``1 / average_block_size``.
-        seed
-            Optional random seed.
-        scenario_ids
-            Optional scenario identifiers. When omitted, scenarios are numbered
-            from ``0`` to ``n_scenarios - 1``.
-        """
-        if horizon <= 0:
-            raise ValueError("horizon must be positive")
-        if n_scenarios <= 0:
-            raise ValueError("n_scenarios must be positive")
-        if batch_size <= 0:
-            raise ValueError("batch_size must be positive")
-        if not history:
-            raise ValueError("history must contain at least one path")
-        if method not in (
-            "iid",
-            "circular_block",
-            "moving_block",
-            "stationary_block",
-        ):
-            raise ValueError(
-                "method must be 'iid', 'circular_block', 'moving_block', "
-                "or 'stationary_block'"
-            )
+        """Create a bootstrap scenario loader."""
+        self.horizon = _require_positive_integer("horizon", horizon)
+        self.n_scenarios = _require_positive_integer("n_scenarios", n_scenarios)
+        self.batch_size = _require_positive_integer("batch_size", batch_size)
+        self.method = _validate_method(method)
 
         self.initial_state = initial_state
-        self.history = {name: np.asarray(values) for name, values in history.items()}
-        self.horizon = int(horizon)
-        self.n_scenarios = int(n_scenarios)
-        self.batch_size = int(batch_size)
-        self.method = method
-        self.seed = seed
-
-        first_path = next(iter(self.history.values()))
-        if first_path.ndim < 1:
-            raise ValueError(
-                "history values must have shape [n_observations, ...]"
-            )
-        self.n_observations = int(first_path.shape[0])
-        if self.n_observations == 0:
-            raise ValueError("history values must contain at least one observation")
-
-        for name, values in self.history.items():
-            if values.ndim < 1:
-                raise ValueError(
-                    f"history[{name!r}] must have shape [n_observations, ...]"
-                )
-            if values.shape[0] != self.n_observations:
-                raise ValueError(
-                    f"history[{name!r}] has {values.shape[0]} observations, "
-                    f"expected {self.n_observations}"
-                )
-
-        self.block_size = _validate_bootstrap_block_size(
-            method,
+        self.history, self.n_observations = _coerce_history(history)
+        self.block_size = _validate_block_size(
+            self.method,
             block_size,
             self.n_observations,
         )
         self.average_block_size = _validate_average_block_size(
-            method,
+            self.method,
             average_block_size,
         )
-
-        if scenario_ids is None:
-            self.scenario_ids = np.arange(self.n_scenarios)
-        else:
-            if len(scenario_ids) != self.n_scenarios:
-                raise ValueError("scenario_ids length must match n_scenarios")
-            self.scenario_ids = np.asarray(scenario_ids)
+        self.seed = seed
+        self.scenario_ids = _scenario_id_array(scenario_ids, self.n_scenarios)
+        self._sampling_spec = _SamplingSpec(
+            n_observations=self.n_observations,
+            horizon=self.horizon,
+            block_size=self.block_size,
+            average_block_size=self.average_block_size,
+        )
+        self._index_sampler = _INDEX_SAMPLERS[self.method]
 
     def __iter__(self) -> Iterator[ScenarioBatch]:
         """Yield bootstrap scenario batches."""
         rng = np.random.default_rng(self.seed)
         for start in range(0, self.n_scenarios, self.batch_size):
             stop = min(start + self.batch_size, self.n_scenarios)
-            size = stop - start
-            sampled_indexes = self._sample_indexes(rng, size)
+            sampled_indexes = self._sample_indexes(rng, stop - start)
 
             yield ScenarioBatch(
                 initial_state=_slice_initial_state(
-                    self.initial_state, start, stop, self.n_scenarios
+                    self.initial_state,
+                    start,
+                    stop,
+                    self.n_scenarios,
                 ),
                 exogenous={
                     name: values[sampled_indexes]
@@ -167,41 +125,7 @@ class BootstrapScenarioLoader(ScenarioLoader):
         rng: np.random.Generator,
         batch_size: int,
     ) -> np.ndarray:
-        if self.method == "iid":
-            return _iid_bootstrap_indexes(
-                rng,
-                n_observations=self.n_observations,
-                batch_size=batch_size,
-                horizon=self.horizon,
-            )
-        if self.method == "circular_block":
-            return _circular_block_bootstrap_indexes(
-                rng,
-                n_observations=self.n_observations,
-                batch_size=batch_size,
-                horizon=self.horizon,
-                block_size=self.block_size,
-            )
-        if self.method == "moving_block":
-            return _moving_block_bootstrap_indexes(
-                rng,
-                n_observations=self.n_observations,
-                batch_size=batch_size,
-                horizon=self.horizon,
-                block_size=self.block_size,
-            )
-        if self.method == "stationary_block":
-            return _stationary_block_bootstrap_indexes(
-                rng,
-                n_observations=self.n_observations,
-                batch_size=batch_size,
-                horizon=self.horizon,
-                average_block_size=self.average_block_size,
-            )
-        raise ValueError(
-            "method must be 'iid', 'circular_block', 'moving_block', "
-            "or 'stationary_block'"
-        )
+        return self._index_sampler(rng, self._sampling_spec, batch_size)
 
 
 class IIDBootstrapScenarioLoader(BootstrapScenarioLoader):
@@ -219,11 +143,11 @@ class IIDBootstrapScenarioLoader(BootstrapScenarioLoader):
         scenario_ids: Sequence[int] | None = None,
     ) -> None:
         super().__init__(
-            initial_state=initial_state,
-            history=history,
-            horizon=horizon,
-            n_scenarios=n_scenarios,
-            batch_size=batch_size,
+            initial_state,
+            history,
+            horizon,
+            n_scenarios,
+            batch_size,
             method="iid",
             seed=seed,
             scenario_ids=scenario_ids,
@@ -246,11 +170,11 @@ class CircularBlockBootstrapScenarioLoader(BootstrapScenarioLoader):
         scenario_ids: Sequence[int] | None = None,
     ) -> None:
         super().__init__(
-            initial_state=initial_state,
-            history=history,
-            horizon=horizon,
-            n_scenarios=n_scenarios,
-            batch_size=batch_size,
+            initial_state,
+            history,
+            horizon,
+            n_scenarios,
+            batch_size,
             method="circular_block",
             block_size=block_size,
             seed=seed,
@@ -274,11 +198,11 @@ class MovingBlockBootstrapScenarioLoader(BootstrapScenarioLoader):
         scenario_ids: Sequence[int] | None = None,
     ) -> None:
         super().__init__(
-            initial_state=initial_state,
-            history=history,
-            horizon=horizon,
-            n_scenarios=n_scenarios,
-            batch_size=batch_size,
+            initial_state,
+            history,
+            horizon,
+            n_scenarios,
+            batch_size,
             method="moving_block",
             block_size=block_size,
             seed=seed,
@@ -302,11 +226,11 @@ class StationaryBlockBootstrapScenarioLoader(BootstrapScenarioLoader):
         scenario_ids: Sequence[int] | None = None,
     ) -> None:
         super().__init__(
-            initial_state=initial_state,
-            history=history,
-            horizon=horizon,
-            n_scenarios=n_scenarios,
-            batch_size=batch_size,
+            initial_state,
+            history,
+            horizon,
+            n_scenarios,
+            batch_size,
             method="stationary_block",
             average_block_size=average_block_size,
             seed=seed,
@@ -346,139 +270,194 @@ class StationaryBootstrap(StationaryBlockBootstrapScenarioLoader):
         scenario_ids: Sequence[int] | None = None,
     ) -> None:
         super().__init__(
-            initial_state=initial_state,
-            history=history,
-            horizon=horizon,
-            n_scenarios=n_scenarios,
-            batch_size=batch_size,
+            initial_state,
+            history,
+            horizon,
+            n_scenarios,
+            batch_size,
             average_block_size=block_size,
             seed=seed,
             scenario_ids=scenario_ids,
         )
 
 
-def _validate_bootstrap_block_size(
+def _require_positive_integer(name: str, value: int) -> int:
+    if isinstance(value, bool) or not isinstance(value, Integral):
+        raise ValueError(f"{name} must be a positive integer")
+    if value <= 0:
+        raise ValueError(f"{name} must be positive")
+    return int(value)
+
+
+def _validate_method(method: str) -> BootstrapMethod:
+    if method not in _VALID_METHODS:
+        raise ValueError(_METHOD_ERROR)
+    return cast(BootstrapMethod, method)
+
+
+def _coerce_history(history: Mapping[str, Any]) -> tuple[dict[str, np.ndarray], int]:
+    if not history:
+        raise ValueError("history must contain at least one path")
+
+    arrays = {name: np.asarray(values) for name, values in history.items()}
+    history_items = iter(arrays.items())
+    first_name, first_values = next(history_items)
+    n_observations = _validate_history_array(first_name, first_values)
+
+    for name, values in history_items:
+        observation_count = _validate_history_array(name, values)
+        if observation_count != n_observations:
+            raise ValueError(
+                f"history[{name!r}] has {observation_count} observations, "
+                f"expected {n_observations}"
+            )
+    return arrays, n_observations
+
+
+def _validate_history_array(name: str, values: np.ndarray) -> int:
+    if values.ndim < 1:
+        raise ValueError(
+            f"history[{name!r}] must have shape [n_observations, ...]"
+        )
+    if values.shape[0] == 0:
+        raise ValueError("history values must contain at least one observation")
+    return int(values.shape[0])
+
+
+def _scenario_id_array(
+    scenario_ids: Sequence[int] | None,
+    n_scenarios: int,
+) -> np.ndarray:
+    if scenario_ids is None:
+        return np.arange(n_scenarios)
+    if len(scenario_ids) != n_scenarios:
+        raise ValueError("scenario_ids length must match n_scenarios")
+    return np.asarray(scenario_ids)
+
+
+def _validate_block_size(
     method: BootstrapMethod,
     block_size: int | None,
     n_observations: int,
 ) -> int:
-    if method in ("circular_block", "moving_block"):
-        if block_size is None:
-            raise ValueError(f"block_size is required for {method} bootstrap")
-        if not isinstance(block_size, Integral):
-            raise ValueError("block_size must be an integer")
-        if block_size <= 0:
-            raise ValueError("block_size must be positive")
-        if method == "moving_block" and block_size > n_observations:
+    if method not in _FIXED_BLOCK_METHODS:
+        if block_size is not None:
             raise ValueError(
-                "block_size must be less than or equal to the number of "
-                "observations for moving_block bootstrap"
+                "block_size is only supported for circular_block and moving_block "
+                "bootstrap"
             )
-        return int(block_size)
+        return 1
 
-    if block_size is not None:
+    if block_size is None:
+        raise ValueError(f"block_size is required for {method} bootstrap")
+    if isinstance(block_size, bool) or not isinstance(block_size, Integral):
+        raise ValueError("block_size must be an integer")
+    if block_size <= 0:
+        raise ValueError("block_size must be positive")
+    if method == "moving_block" and block_size > n_observations:
         raise ValueError(
-            "block_size is only supported for circular_block and moving_block "
-            "bootstrap"
+            "block_size must be less than or equal to the number of "
+            "observations for moving_block bootstrap"
         )
-    return 1
+    return int(block_size)
 
 
 def _validate_average_block_size(
     method: BootstrapMethod,
     average_block_size: float | None,
 ) -> float:
-    if method == "stationary_block":
-        if average_block_size is None:
+    if method != "stationary_block":
+        if average_block_size is not None:
             raise ValueError(
-                "average_block_size is required for stationary_block bootstrap"
+                "average_block_size is only supported for stationary_block bootstrap"
             )
-        if average_block_size < 1 or not np.isfinite(average_block_size):
-            raise ValueError("average_block_size must be finite and at least 1")
-        return float(average_block_size)
+        return 1.0
 
-    if average_block_size is not None:
-        raise ValueError(
-            "average_block_size is only supported for stationary_block bootstrap"
-        )
-    return 1.0
+    if average_block_size is None:
+        raise ValueError("average_block_size is required for stationary_block bootstrap")
+    if not isinstance(average_block_size, Real) or not np.isfinite(average_block_size):
+        raise ValueError("average_block_size must be finite and at least 1")
+    if average_block_size < 1:
+        raise ValueError("average_block_size must be finite and at least 1")
+    return float(average_block_size)
 
 
 def _iid_bootstrap_indexes(
     rng: np.random.Generator,
-    *,
-    n_observations: int,
+    spec: _SamplingSpec,
     batch_size: int,
-    horizon: int,
 ) -> np.ndarray:
     return rng.integers(
         0,
-        n_observations,
-        size=(batch_size, horizon),
+        spec.n_observations,
+        size=(batch_size, spec.horizon),
         dtype=np.int64,
     )
 
 
 def _circular_block_bootstrap_indexes(
     rng: np.random.Generator,
-    *,
-    n_observations: int,
+    spec: _SamplingSpec,
     batch_size: int,
-    horizon: int,
-    block_size: int,
 ) -> np.ndarray:
-    indexes = np.empty((batch_size, horizon), dtype=np.int64)
-    for scenario_index in range(batch_size):
-        position = 0
-        while position < horizon:
-            block_start = int(rng.integers(0, n_observations))
-            length = min(block_size, horizon - position)
-            indexes[scenario_index, position : position + length] = (
-                block_start + np.arange(length, dtype=np.int64)
-            ) % n_observations
-            position += length
-    return indexes
+    return _fixed_block_bootstrap_indexes(rng, spec, batch_size, wrap=True)
 
 
 def _moving_block_bootstrap_indexes(
     rng: np.random.Generator,
-    *,
-    n_observations: int,
+    spec: _SamplingSpec,
     batch_size: int,
-    horizon: int,
-    block_size: int,
 ) -> np.ndarray:
-    indexes = np.empty((batch_size, horizon), dtype=np.int64)
-    max_start = n_observations - block_size
+    return _fixed_block_bootstrap_indexes(rng, spec, batch_size, wrap=False)
+
+
+def _fixed_block_bootstrap_indexes(
+    rng: np.random.Generator,
+    spec: _SamplingSpec,
+    batch_size: int,
+    *,
+    wrap: bool,
+) -> np.ndarray:
+    indexes = np.empty((batch_size, spec.horizon), dtype=np.int64)
+    offsets = np.arange(spec.block_size, dtype=np.int64)
+    high = spec.n_observations if wrap else spec.n_observations - spec.block_size + 1
+
     for scenario_index in range(batch_size):
         position = 0
-        while position < horizon:
-            block_start = int(rng.integers(0, max_start + 1))
-            length = min(block_size, horizon - position)
-            indexes[scenario_index, position : position + length] = (
-                block_start + np.arange(length, dtype=np.int64)
-            )
+        while position < spec.horizon:
+            block_start = int(rng.integers(0, high))
+            length = min(spec.block_size, spec.horizon - position)
+            block = block_start + offsets[:length]
+            if wrap:
+                block %= spec.n_observations
+            indexes[scenario_index, position : position + length] = block
             position += length
     return indexes
 
 
 def _stationary_block_bootstrap_indexes(
     rng: np.random.Generator,
-    *,
-    n_observations: int,
+    spec: _SamplingSpec,
     batch_size: int,
-    horizon: int,
-    average_block_size: float,
 ) -> np.ndarray:
-    restart_probability = 1.0 / average_block_size
-    indexes = np.empty((batch_size, horizon), dtype=np.int64)
+    restart_probability = 1.0 / spec.average_block_size
+    indexes = np.empty((batch_size, spec.horizon), dtype=np.int64)
+
     for scenario_index in range(batch_size):
-        current = int(rng.integers(0, n_observations))
+        current = int(rng.integers(0, spec.n_observations))
         indexes[scenario_index, 0] = current
-        for t in range(1, horizon):
+        for t in range(1, spec.horizon):
             if rng.random() < restart_probability:
-                current = int(rng.integers(0, n_observations))
+                current = int(rng.integers(0, spec.n_observations))
             else:
-                current = (current + 1) % n_observations
+                current = (current + 1) % spec.n_observations
             indexes[scenario_index, t] = current
     return indexes
+
+
+_INDEX_SAMPLERS: dict[BootstrapMethod, _IndexSampler] = {
+    "iid": _iid_bootstrap_indexes,
+    "circular_block": _circular_block_bootstrap_indexes,
+    "moving_block": _moving_block_bootstrap_indexes,
+    "stationary_block": _stationary_block_bootstrap_indexes,
+}
