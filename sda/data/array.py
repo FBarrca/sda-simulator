@@ -1,53 +1,39 @@
 from __future__ import annotations
 
 from collections.abc import Iterator, Mapping, Sequence
+from numbers import Integral
 from typing import Any
 
 import numpy as np
 
-from sda.data.core import ScenarioBatch, ScenarioLoader, _slice_initial_state
+from sda.core import ScenarioBatch
+from sda.data._state import slice_initial_state
+from sda.data.module import DataModule
 
 
-class ArrayScenarioLoader(ScenarioLoader):
-    """Scenario loader backed by NumPy-compatible arrays.
+class ArrayDataModule(DataModule):
+    """Data module backed by NumPy-compatible arrays.
 
-    Use this loader when all scenario paths are already available in memory.
+    Use this data module when all scenario paths are already available in memory.
     Each exogenous value must be array-like with shape
-    ``[n_scenarios, horizon, ...]``. The loader slices those arrays into
+    ``[n_scenarios, horizon, ...]``. The module slices those arrays into
     ``ScenarioBatch`` objects of at most ``batch_size`` scenarios.
     """
 
     def __init__(
         self,
-        initial_state: Any,
         exogenous: Mapping[str, Any],
-        batch_size: int,
+        *,
+        initial_state: Any = 0,
+        batch_size: int | None = None,
         scenario_ids: Sequence[int] | None = None,
     ) -> None:
-        """Create an array-backed scenario loader.
-
-        Parameters
-        ----------
-        initial_state
-            Starting state for the model. It may be a scalar, a vector with one
-            entry per scenario, or a mapping whose values follow the same rule.
-        exogenous
-            Mapping from input name to array-like future paths shaped
-            ``[n_scenarios, horizon, ...]``.
-        batch_size
-            Maximum number of scenarios yielded in each batch.
-        scenario_ids
-            Optional scenario identifiers. When omitted, scenarios are numbered
-            from ``0`` to ``n_scenarios - 1``.
-        """
-        if batch_size <= 0:
-            raise ValueError("batch_size must be positive")
+        """Create an array-backed data module."""
         if not exogenous:
             raise ValueError("exogenous must contain at least one path")
 
         self.initial_state = initial_state
         self.exogenous = {name: np.asarray(path) for name, path in exogenous.items()}
-        self.batch_size = int(batch_size)
 
         first_path = next(iter(self.exogenous.values()))
         if first_path.ndim < 2:
@@ -57,6 +43,11 @@ class ArrayScenarioLoader(ScenarioLoader):
 
         self.n_scenarios = int(first_path.shape[0])
         self.horizon = int(first_path.shape[1])
+        self.batch_size = (
+            self.n_scenarios
+            if batch_size is None
+            else _positive_int("batch_size", batch_size)
+        )
 
         for name, path in self.exogenous.items():
             if path.ndim < 2:
@@ -83,12 +74,13 @@ class ArrayScenarioLoader(ScenarioLoader):
                 )
             self.scenario_ids = np.asarray(scenario_ids)
 
-    def __iter__(self) -> Iterator[ScenarioBatch]:
+    def batches(self, stage: str = "evaluate") -> Iterator[ScenarioBatch]:
         """Yield consecutive scenario batches from the stored arrays."""
+        del stage
         for start in range(0, self.n_scenarios, self.batch_size):
             stop = min(start + self.batch_size, self.n_scenarios)
             yield ScenarioBatch(
-                initial_state=_slice_initial_state(
+                initial_state=slice_initial_state(
                     self.initial_state, start, stop, self.n_scenarios
                 ),
                 exogenous={
@@ -97,3 +89,16 @@ class ArrayScenarioLoader(ScenarioLoader):
                 },
                 scenario_ids=self.scenario_ids[start:stop].tolist(),
             )
+
+
+def _positive_int(name: str, value: int) -> int:
+    if isinstance(value, bool) or not isinstance(value, Integral):
+        raise ValueError(f"{name} must be a positive integer")
+    if value <= 0:
+        raise ValueError(f"{name} must be positive")
+    return int(value)
+
+
+__all__ = [
+    "ArrayDataModule",
+]

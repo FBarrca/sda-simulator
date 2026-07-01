@@ -6,7 +6,9 @@ from typing import Any, Literal, cast
 
 import numpy as np
 
-from sda.data.core import ScenarioBatch, ScenarioLoader, _slice_initial_state
+from sda.core import ScenarioBatch
+from sda.data._state import slice_initial_state
+from sda.data.module import DataModule
 
 BootstrapMethod = Literal[
     "iid",
@@ -21,73 +23,70 @@ _BOOTSTRAP_METHODS: tuple[BootstrapMethod, ...] = (
     "moving_block",
     "stationary_block",
 )
+_METHOD_ALIASES: dict[str, BootstrapMethod] = {
+    "iid": "iid",
+    "circular": "circular_block",
+    "circular_block": "circular_block",
+    "moving": "moving_block",
+    "moving_block": "moving_block",
+    "stationary": "stationary_block",
+    "stationary_block": "stationary_block",
+}
 _FIXED_BLOCK_METHODS: tuple[BootstrapMethod, ...] = (
     "circular_block",
     "moving_block",
 )
-_METHOD_ERROR = (
-    "method must be 'iid', 'circular_block', 'moving_block', or 'stationary_block'"
-)
 
 
-# Public loaders
-
-
-class BootstrapScenarioLoader(ScenarioLoader):
-    """Scenario loader that resamples futures from historical observations.
-
-    Each history value must be array-like with shape ``[n_observations, ...]``.
-    The loader samples observation indexes with replacement and returns futures
-    shaped ``[batch_size, horizon, ...]``.
-
-    Supported bootstrap methods:
-
-    ``"iid"``
-        Sample individual observations independently with replacement.
-    ``"circular_block"``
-        Sample fixed-length contiguous blocks that wrap around the history.
-    ``"moving_block"``
-        Sample fixed-length contiguous blocks that do not wrap.
-    ``"stationary_block"``
-        Sample circular blocks with geometrically distributed lengths.
-    """
+class BootstrapDataModule(DataModule):
+    """Data module that resamples futures from historical observations."""
 
     def __init__(
         self,
-        initial_state: Any,
         history: Mapping[str, Any],
+        *,
         horizon: int,
         n_scenarios: int,
-        batch_size: int,
-        *,
-        method: BootstrapMethod = "iid",
-        block_size: int | None = None,
+        initial_state: Any = 0,
+        batch_size: int | None = None,
+        method: str = "iid",
+        block_size: int | float | None = None,
         average_block_size: float | None = None,
         seed: int | None = None,
         scenario_ids: Sequence[int] | None = None,
     ) -> None:
-        """Create a bootstrap scenario loader."""
+        """Create a bootstrap data module."""
         self.horizon = _positive_int("horizon", horizon)
         self.n_scenarios = _positive_int("n_scenarios", n_scenarios)
-        self.batch_size = _positive_int("batch_size", batch_size)
-        self.method = _validate_method(method)
+        self.batch_size = (
+            self.n_scenarios
+            if batch_size is None
+            else _positive_int("batch_size", batch_size)
+        )
+        self.method = _normalize_method(method)
         self.initial_state = initial_state
         self.seed = seed
 
         self.history, self.n_observations = _prepare_history(history)
+        fixed_block_size, stationary_average = _bootstrap_block_parameters(
+            method=self.method,
+            block_size=block_size,
+            average_block_size=average_block_size,
+        )
         self.block_size = _validate_block_size(
             self.method,
-            block_size,
+            fixed_block_size,
             self.n_observations,
         )
         self.average_block_size = _validate_average_block_size(
             self.method,
-            average_block_size,
+            stationary_average,
         )
         self.scenario_ids = _prepare_scenario_ids(scenario_ids, self.n_scenarios)
 
-    def __iter__(self) -> Iterator[ScenarioBatch]:
+    def batches(self, stage: str = "evaluate") -> Iterator[ScenarioBatch]:
         """Yield bootstrap scenario batches."""
+        del stage
         rng = np.random.default_rng(self.seed)
 
         for start in range(0, self.n_scenarios, self.batch_size):
@@ -95,7 +94,7 @@ class BootstrapScenarioLoader(ScenarioLoader):
             sampled_indexes = self._sample_indexes(rng, batch_size=stop - start)
 
             yield ScenarioBatch(
-                initial_state=_slice_initial_state(
+                initial_state=slice_initial_state(
                     self.initial_state,
                     start,
                     stop,
@@ -150,162 +149,6 @@ class BootstrapScenarioLoader(ScenarioLoader):
         )
 
 
-class IIDBootstrapScenarioLoader(BootstrapScenarioLoader):
-    """Bootstrap futures by independently sampling historical observations."""
-
-    def __init__(
-        self,
-        initial_state: Any,
-        history: Mapping[str, Any],
-        horizon: int,
-        n_scenarios: int,
-        batch_size: int,
-        *,
-        seed: int | None = None,
-        scenario_ids: Sequence[int] | None = None,
-    ) -> None:
-        super().__init__(
-            initial_state=initial_state,
-            history=history,
-            horizon=horizon,
-            n_scenarios=n_scenarios,
-            batch_size=batch_size,
-            method="iid",
-            seed=seed,
-            scenario_ids=scenario_ids,
-        )
-
-
-class CircularBlockBootstrapScenarioLoader(BootstrapScenarioLoader):
-    """Bootstrap futures from fixed-length circular blocks of history."""
-
-    def __init__(
-        self,
-        initial_state: Any,
-        history: Mapping[str, Any],
-        horizon: int,
-        n_scenarios: int,
-        batch_size: int,
-        *,
-        block_size: int,
-        seed: int | None = None,
-        scenario_ids: Sequence[int] | None = None,
-    ) -> None:
-        super().__init__(
-            initial_state=initial_state,
-            history=history,
-            horizon=horizon,
-            n_scenarios=n_scenarios,
-            batch_size=batch_size,
-            method="circular_block",
-            block_size=block_size,
-            seed=seed,
-            scenario_ids=scenario_ids,
-        )
-
-
-class MovingBlockBootstrapScenarioLoader(BootstrapScenarioLoader):
-    """Bootstrap futures from fixed-length non-wrapping blocks of history."""
-
-    def __init__(
-        self,
-        initial_state: Any,
-        history: Mapping[str, Any],
-        horizon: int,
-        n_scenarios: int,
-        batch_size: int,
-        *,
-        block_size: int,
-        seed: int | None = None,
-        scenario_ids: Sequence[int] | None = None,
-    ) -> None:
-        super().__init__(
-            initial_state=initial_state,
-            history=history,
-            horizon=horizon,
-            n_scenarios=n_scenarios,
-            batch_size=batch_size,
-            method="moving_block",
-            block_size=block_size,
-            seed=seed,
-            scenario_ids=scenario_ids,
-        )
-
-
-class StationaryBlockBootstrapScenarioLoader(BootstrapScenarioLoader):
-    """Bootstrap futures from circular blocks with random lengths."""
-
-    def __init__(
-        self,
-        initial_state: Any,
-        history: Mapping[str, Any],
-        horizon: int,
-        n_scenarios: int,
-        batch_size: int,
-        *,
-        average_block_size: float,
-        seed: int | None = None,
-        scenario_ids: Sequence[int] | None = None,
-    ) -> None:
-        super().__init__(
-            initial_state=initial_state,
-            history=history,
-            horizon=horizon,
-            n_scenarios=n_scenarios,
-            batch_size=batch_size,
-            method="stationary_block",
-            average_block_size=average_block_size,
-            seed=seed,
-            scenario_ids=scenario_ids,
-        )
-
-
-class IIDBootstrap(IIDBootstrapScenarioLoader):
-    """Arch-style name for IID bootstrap scenario loading."""
-
-
-class CircularBlockBootstrap(CircularBlockBootstrapScenarioLoader):
-    """Arch-style name for circular block bootstrap scenario loading."""
-
-
-class MovingBlockBootstrap(MovingBlockBootstrapScenarioLoader):
-    """Arch-style name for moving block bootstrap scenario loading."""
-
-
-class StationaryBootstrap(StationaryBlockBootstrapScenarioLoader):
-    """Arch-style name for stationary bootstrap scenario loading.
-
-    ``block_size`` is the average block size, matching the name used by
-    ``arch.bootstrap.StationaryBootstrap``.
-    """
-
-    def __init__(
-        self,
-        initial_state: Any,
-        history: Mapping[str, Any],
-        horizon: int,
-        n_scenarios: int,
-        batch_size: int,
-        *,
-        block_size: float,
-        seed: int | None = None,
-        scenario_ids: Sequence[int] | None = None,
-    ) -> None:
-        super().__init__(
-            initial_state=initial_state,
-            history=history,
-            horizon=horizon,
-            n_scenarios=n_scenarios,
-            batch_size=batch_size,
-            average_block_size=block_size,
-            seed=seed,
-            scenario_ids=scenario_ids,
-        )
-
-
-# Validation helpers
-
-
 def _positive_int(name: str, value: int) -> int:
     if isinstance(value, bool) or not isinstance(value, Integral):
         raise ValueError(f"{name} must be a positive integer")
@@ -314,10 +157,28 @@ def _positive_int(name: str, value: int) -> int:
     return int(value)
 
 
-def _validate_method(method: str) -> BootstrapMethod:
-    if method not in _BOOTSTRAP_METHODS:
-        raise ValueError(_METHOD_ERROR)
-    return cast(BootstrapMethod, method)
+def _normalize_method(method: str) -> BootstrapMethod:
+    try:
+        return _METHOD_ALIASES[method]
+    except KeyError as exc:
+        methods = "', '".join(_METHOD_ALIASES)
+        raise ValueError(f"method must be one of '{methods}'") from exc
+
+
+def _bootstrap_block_parameters(
+    *,
+    method: BootstrapMethod,
+    block_size: int | float | None,
+    average_block_size: float | None,
+) -> tuple[int | None, float | None]:
+    if method == "stationary_block":
+        if block_size is not None and average_block_size is not None:
+            raise ValueError(
+                "provide either block_size or average_block_size for stationary bootstrap"
+            )
+        return None, average_block_size if average_block_size is not None else block_size
+
+    return cast(int | None, block_size), average_block_size
 
 
 def _prepare_history(history: Mapping[str, Any]) -> tuple[dict[str, np.ndarray], int]:
@@ -410,9 +271,6 @@ def _validate_average_block_size(
     return float(average_block_size)
 
 
-# Index samplers
-
-
 def _iid_indexes(
     rng: np.random.Generator,
     *,
@@ -499,3 +357,9 @@ def _stationary_block_indexes(
             indexes[scenario_index, t] = current
 
     return indexes
+
+
+__all__ = [
+    "BootstrapDataModule",
+    "BootstrapMethod",
+]

@@ -1,7 +1,14 @@
 import numpy as np
 import pytest
 
-from sda import MetricStore
+from sda import (
+    MetricStore,
+    StepRecord,
+    TrajectoryRecord,
+    info_metric,
+    step_metric,
+    trajectory_metric,
+)
 
 
 def test_metric_series_distribution_queries():
@@ -38,6 +45,94 @@ def test_metric_series_returns_rows():
     assert [row.value for row in rows] == [1, 2]
     assert [row.scenario_id for row in rows] == [1, 2]
     assert [row.t for row in rows] == [3, 3]
+
+
+def test_metric_series_supports_lightweight_export_and_counting():
+    store = MetricStore()
+    store.log("x", [1, 2], scenario_ids=[1, 2], t=3, level="step")
+    series = store.metric("x")
+
+    assert len(series) == 2
+    assert series.count() == 2
+    assert [row.value for row in series] == [1, 2]
+    assert series.records() == [
+        {
+            "name": "x",
+            "value": 1.0,
+            "scenario_id": 1,
+            "t": 3,
+            "level": "step",
+        },
+        {
+            "name": "x",
+            "value": 2.0,
+            "scenario_id": 2,
+            "t": 3,
+            "level": "step",
+        },
+    ]
+
+
+def test_step_metric_factory_logs_step_values():
+    metric = step_metric("inventory", lambda step: step.next_state)
+    store = MetricStore()
+    step = StepRecord(
+        scenario_ids=[10, 11],
+        t=2,
+        state=np.array([3, 4]),
+        decision=np.array([0, 0]),
+        exogenous={},
+        next_state=np.array([5, 6]),
+        cost=np.array([1, 1]),
+        info={},
+    )
+
+    metric.on_step(step, store)
+
+    assert store.metric("inventory").values().tolist() == [5, 6]
+    assert [row.t for row in store.metric("inventory")] == [2, 2]
+
+
+def test_info_metric_logs_step_info_by_name_or_key():
+    store = MetricStore()
+    step = StepRecord(
+        scenario_ids=[1, 2],
+        t=0,
+        state=None,
+        decision=None,
+        exogenous={},
+        next_state=None,
+        cost=np.array([0, 0]),
+        info={
+            "fill_rate": np.array([0.9, 1.0]),
+            "lost_sales": np.array([0, 3]),
+        },
+    )
+
+    info_metric("fill_rate").on_step(step, store)
+    info_metric("stockout", key="lost_sales").on_step(step, store)
+
+    assert store.metric("fill_rate").values().tolist() == [0.9, 1.0]
+    assert store.metric("stockout").values().tolist() == [0, 3]
+
+
+def test_trajectory_metric_factory_logs_trajectory_values():
+    metric = trajectory_metric(
+        "ending_inventory",
+        lambda trajectory: trajectory.final_state,
+    )
+    store = MetricStore()
+    trajectory = TrajectoryRecord(
+        scenario_ids=[4, 5],
+        total_cost=np.array([10, 20]),
+        final_state=np.array([7, 8]),
+        steps=[],
+    )
+
+    metric.on_trajectory(trajectory, store)
+
+    assert store.metric("ending_inventory").values().tolist() == [7, 8]
+    assert store.metric("ending_inventory").trajectory_level().count() == 2
 
 
 def test_metric_series_builds_trajectory_matrix():

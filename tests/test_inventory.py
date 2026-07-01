@@ -1,16 +1,16 @@
 from examples.inventory import (
     FillRateMetric,
+    InventoryDataModule,
     InventoryMetric,
     InventoryModel,
-    InventoryScenarioLoader,
     OrderUpToPolicy,
     StockoutMetric,
 )
-from sda import Simulator, StepCostMetric, TotalCostMetric
+from sda import evaluate
 
 
 def test_inventory_example_metrics_are_well_formed():
-    scenarios = InventoryScenarioLoader(
+    data = InventoryDataModule(
         horizon=12,
         n_scenarios=100,
         batch_size=16,
@@ -25,15 +25,15 @@ def test_inventory_example_metrics_are_well_formed():
         holding_cost=0.1,
         stockout_cost=8.0,
     )
-    result = Simulator(
-        metrics=[
-            StepCostMetric(),
-            TotalCostMetric(),
+    result = evaluate(
+        model,
+        data,
+        extra_metrics=[
             InventoryMetric(),
             StockoutMetric(),
             FillRateMetric(),
-        ]
-    ).evaluate(model, scenarios)
+        ],
+    )
 
     assert len(result.metric("total_cost").values()) == 100
     assert result.metric("total_cost").percentile(95) > 0

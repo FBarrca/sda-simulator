@@ -1,32 +1,16 @@
-"""Scenario data structures and loaders."""
+"""Scenario data modules."""
 
-from sda.data.array import ArrayScenarioLoader
-from sda.data.bootstrap import (
-    BootstrapMethod,
-    BootstrapScenarioLoader,
-    CircularBlockBootstrap,
-    CircularBlockBootstrapScenarioLoader,
-    IIDBootstrap,
-    IIDBootstrapScenarioLoader,
-    MovingBlockBootstrap,
-    MovingBlockBootstrapScenarioLoader,
-    StationaryBootstrap,
-    StationaryBlockBootstrapScenarioLoader,
-)
-from sda.data.core import ScenarioBatch, ScenarioLoader
+from sda.core import ScenarioBatch
+from sda.data.array import ArrayDataModule
+from sda.data.bootstrap import BootstrapDataModule, BootstrapMethod
+from sda.data.generator import GeneratorDataModule
+from sda.data.module import DataModule
 
 __all__ = [
-    "ArrayScenarioLoader",
+    "ArrayDataModule",
+    "BootstrapDataModule",
     "BootstrapMethod",
-    "BootstrapScenarioLoader",
-    "CircularBlockBootstrap",
-    "CircularBlockBootstrapScenarioLoader",
-    "IIDBootstrap",
-    "IIDBootstrapScenarioLoader",
-    "MovingBlockBootstrap",
-    "MovingBlockBootstrapScenarioLoader",
+    "DataModule",
+    "GeneratorDataModule",
     "ScenarioBatch",
-    "ScenarioLoader",
-    "StationaryBootstrap",
-    "StationaryBlockBootstrapScenarioLoader",
 ]

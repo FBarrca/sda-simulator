@@ -5,8 +5,8 @@ from examples.logistics import (
     Assignment,
     GreedyPolicy,
     LookaheadRolloutPolicy,
+    LogisticsDataModule,
     LogisticsModel,
-    LogisticsScenarioLoader,
     MilpPolicy,
     NearestFeasiblePolicy,
     Order,
@@ -40,8 +40,8 @@ def test_synthetic_history_is_deterministic_and_has_weekend_dip():
     assert weekend_mean < weekday_mean * 0.7
 
 
-def test_logistics_scenario_loader_batches_and_bootstraps_seven_day_blocks():
-    loader = LogisticsScenarioLoader(
+def test_logistics_data_module_batches_and_bootstraps_seven_day_blocks():
+    data = LogisticsDataModule(
         horizon=10,
         n_scenarios=5,
         batch_size=2,
@@ -49,7 +49,7 @@ def test_logistics_scenario_loader_batches_and_bootstraps_seven_day_blocks():
         seed=11,
     )
 
-    batches = list(loader)
+    batches = list(data.batches())
 
     assert [batch.batch_size for batch in batches] == [2, 2, 1]
     first_batch = batches[0]
@@ -70,13 +70,13 @@ def test_logistics_scenario_loader_batches_and_bootstraps_seven_day_blocks():
 
     repeated = next(
         iter(
-            LogisticsScenarioLoader(
+            LogisticsDataModule(
                 horizon=10,
                 n_scenarios=5,
                 batch_size=2,
                 history_days=35,
                 seed=11,
-            )
+            ).batches()
         )
     )
     np.testing.assert_array_equal(

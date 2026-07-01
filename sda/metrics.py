@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-from collections.abc import Iterable, Sequence
+from collections.abc import Callable, Iterable, Iterator, Sequence
 from dataclasses import dataclass
-from typing import Literal
+from typing import Any, Literal
 
 import numpy as np
 
-from sda.model import StepRecord, TrajectoryRecord
+from sda.core import StepRecord, TrajectoryRecord
 
 MetricLevel = Literal["step", "trajectory"]
 
@@ -115,13 +115,38 @@ class MetricSeries:
         """Create a series from metric rows."""
         self._rows = tuple(rows)
 
+    def __iter__(self) -> Iterator[MetricRow]:
+        """Iterate over raw metric rows."""
+        return iter(self._rows)
+
+    def __len__(self) -> int:
+        """Return the number of observations in this series."""
+        return len(self._rows)
+
     def rows(self) -> list[MetricRow]:
         """Return a copy of the raw rows in this series."""
         return list(self._rows)
 
+    def records(self) -> list[dict[str, float | int | str | None]]:
+        """Return rows as plain dictionaries for lightweight export."""
+        return [
+            {
+                "name": row.name,
+                "value": row.value,
+                "scenario_id": row.scenario_id,
+                "t": row.t,
+                "level": row.level,
+            }
+            for row in self._rows
+        ]
+
     def values(self) -> np.ndarray:
         """Return metric values as a one-dimensional float array."""
         return np.asarray([row.value for row in self._rows], dtype=float)
+
+    def count(self) -> int:
+        """Return the number of observations in this series."""
+        return len(self._rows)
 
     def at_time(self, t: int) -> "MetricSeries":
         """Return only observations recorded at time ``t``."""
@@ -184,61 +209,6 @@ class MetricSeries:
             values[scenario_index[scenario_id], time_index[t]] = row.value
 
         return scenario_ids, times, values
-
-    def plot_trajectories(
-        self,
-        ax=None,
-        *,
-        max_trajectories: int | None = None,
-        mean: bool = True,
-        mean_label: str = "mean",
-        alpha: float = 0.25,
-        linewidth: float = 1.0,
-        **plot_kwargs,
-    ):
-        """Plot each scenario path for a step-level metric series.
-
-        Parameters are passed to Matplotlib line plots. Set
-        ``max_trajectories`` to limit clutter, and set ``mean=False`` to hide
-        the average trajectory overlay.
-        """
-        try:
-            import matplotlib.pyplot as plt
-        except ImportError as exc:
-            raise ImportError(
-                "matplotlib is required for trajectory plots. "
-                "Install it or run with `uv run --with matplotlib ...`."
-            ) from exc
-
-        _, times, values = self.to_trajectory_matrix()
-        if values.size == 0:
-            raise ValueError("no step-level rows available for trajectory plot")
-        if max_trajectories is not None:
-            if max_trajectories <= 0:
-                raise ValueError("max_trajectories must be positive")
-            values = values[:max_trajectories]
-
-        if ax is None:
-            _, ax = plt.subplots()
-
-        plot_kwargs.setdefault("color", "C0")
-        for trajectory in values:
-            ax.plot(times, trajectory, alpha=alpha, linewidth=linewidth, **plot_kwargs)
-
-        if mean:
-            ax.plot(
-                times,
-                np.nanmean(values, axis=0),
-                color="black",
-                linewidth=2.0,
-                label=mean_label,
-            )
-            ax.legend()
-
-        metric_name = self._rows[0].name if self._rows else "value"
-        ax.set_xlabel("time")
-        ax.set_ylabel(metric_name)
-        return ax
 
     def mean(self) -> float:
         """Return the arithmetic mean, or ``nan`` for an empty series."""
@@ -332,6 +302,92 @@ class Metric:
         pass
 
 
+class StepMetric(Metric):
+    """Metric defined by a function over ``StepRecord`` objects."""
+
+    def __init__(
+        self,
+        name: str,
+        value: Callable[[StepRecord], Any],
+    ) -> None:
+        """Create a step metric.
+
+        ``value`` should return a scalar or one value per scenario in
+        ``step.scenario_ids``.
+        """
+        self.name = name
+        self.value = value
+
+    def on_step(self, step: StepRecord, store: MetricStore) -> None:
+        """Record the value returned by the metric function."""
+        store.log(
+            name=self.name,
+            values=self.value(step),
+            scenario_ids=step.scenario_ids,
+            t=step.t,
+            level="step",
+        )
+
+
+class TrajectoryMetric(Metric):
+    """Metric defined by a function over ``TrajectoryRecord`` objects."""
+
+    def __init__(
+        self,
+        name: str,
+        value: Callable[[TrajectoryRecord], Any],
+    ) -> None:
+        """Create a trajectory metric.
+
+        ``value`` should return a scalar or one value per scenario in
+        ``trajectory.scenario_ids``.
+        """
+        self.name = name
+        self.value = value
+
+    def on_trajectory(self, trajectory: TrajectoryRecord, store: MetricStore) -> None:
+        """Record the value returned by the metric function."""
+        store.log(
+            name=self.name,
+            values=self.value(trajectory),
+            scenario_ids=trajectory.scenario_ids,
+            level="trajectory",
+        )
+
+
+class InfoMetric(StepMetric):
+    """Step metric that logs a value from ``StepRecord.info``."""
+
+    def __init__(self, name: str, key: str | None = None) -> None:
+        """Create an info metric.
+
+        When ``key`` is omitted, the metric reads ``step.info[name]``.
+        """
+        self.key = name if key is None else key
+        super().__init__(name, lambda step: step.info[self.key])
+
+
+def step_metric(
+    name: str,
+    value: Callable[[StepRecord], Any],
+) -> StepMetric:
+    """Create a metric from a function called after each simulated step."""
+    return StepMetric(name, value)
+
+
+def trajectory_metric(
+    name: str,
+    value: Callable[[TrajectoryRecord], Any],
+) -> TrajectoryMetric:
+    """Create a metric from a function called after each trajectory batch."""
+    return TrajectoryMetric(name, value)
+
+
+def info_metric(name: str, key: str | None = None) -> InfoMetric:
+    """Create a step metric that logs ``step.info[key or name]``."""
+    return InfoMetric(name, key=key)
+
+
 class MetricSet:
     """Dispatches records to a group of metrics."""
 
@@ -383,3 +439,21 @@ class TotalCostMetric(Metric):
             scenario_ids=trajectory.scenario_ids,
             level="trajectory",
         )
+
+
+__all__ = [
+    "InfoMetric",
+    "Metric",
+    "MetricLevel",
+    "MetricRow",
+    "MetricSeries",
+    "MetricSet",
+    "MetricStore",
+    "StepCostMetric",
+    "StepMetric",
+    "TotalCostMetric",
+    "TrajectoryMetric",
+    "info_metric",
+    "step_metric",
+    "trajectory_metric",
+]
