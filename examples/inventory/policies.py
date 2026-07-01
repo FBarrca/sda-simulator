@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from sda.model import Policy, StepRecord
+from sda import Policy, StepRecord
 
 
 class OrderUpToPolicy(Policy):

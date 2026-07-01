@@ -1,6 +1,6 @@
 """Logistics dispatch example case for the SDA framework."""
 
-from examples.logistics.data import LogisticsScenarioLoader, SyntheticHistory, synthetic_history
+from examples.logistics.data import LogisticsDataModule, SyntheticHistory, synthetic_history
 from examples.logistics.domain import (
     Assignment,
     LogisticsState,
@@ -40,8 +40,8 @@ __all__ = [
     "GreedyPolicy",
     "LateCostMetric",
     "LookaheadRolloutPolicy",
+    "LogisticsDataModule",
     "LogisticsModel",
-    "LogisticsScenarioLoader",
     "LogisticsState",
     "MilpPolicy",
     "NearestFeasiblePolicy",

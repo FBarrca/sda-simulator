@@ -2,57 +2,27 @@ from __future__ import annotations
 
 import numpy as np
 
-from sda.metrics import Metric, MetricStore
-from sda.model import StepRecord
+from sda import InfoMetric, StepMetric
 
 
-class InventoryMetric(Metric):
-    name = "inventory"
+class InventoryMetric(StepMetric):
+    def __init__(self) -> None:
+        super().__init__("inventory", lambda step: step.next_state)
 
-    def on_step(self, step: StepRecord, store: MetricStore) -> None:
-        store.log(
-            name=self.name,
-            values=step.next_state,
-            scenario_ids=step.scenario_ids,
-            t=step.t,
-            level="step",
+
+class StockoutMetric(StepMetric):
+    def __init__(self) -> None:
+        super().__init__(
+            "stockout",
+            lambda step: np.asarray(step.info["lost_sales"]) > 0,
         )
 
 
-class StockoutMetric(Metric):
-    name = "stockout"
-
-    def on_step(self, step: StepRecord, store: MetricStore) -> None:
-        store.log(
-            name=self.name,
-            values=np.asarray(step.info["lost_sales"]) > 0,
-            scenario_ids=step.scenario_ids,
-            t=step.t,
-            level="step",
-        )
+class FillRateMetric(InfoMetric):
+    def __init__(self) -> None:
+        super().__init__("fill_rate")
 
 
-class FillRateMetric(Metric):
-    name = "fill_rate"
-
-    def on_step(self, step: StepRecord, store: MetricStore) -> None:
-        store.log(
-            name=self.name,
-            values=step.info["fill_rate"],
-            scenario_ids=step.scenario_ids,
-            t=step.t,
-            level="step",
-        )
-
-
-class OrderQuantityMetric(Metric):
-    name = "order_quantity"
-
-    def on_step(self, step: StepRecord, store: MetricStore) -> None:
-        store.log(
-            name=self.name,
-            values=step.info["order_quantity"],
-            scenario_ids=step.scenario_ids,
-            t=step.t,
-            level="step",
-        )
+class OrderQuantityMetric(InfoMetric):
+    def __init__(self) -> None:
+        super().__init__("order_quantity")

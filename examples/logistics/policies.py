@@ -16,7 +16,7 @@ from examples.logistics.assignment import (
 from examples.logistics.domain import Assignment, LogisticsState, Order, clone_state
 from examples.logistics.network import SKUS, WAREHOUSES
 from examples.logistics.rollout import SyntheticRolloutSampler
-from sda.model import Policy, StepRecord
+from sda import Policy, StepRecord
 
 
 class DispatchPolicy(Policy):

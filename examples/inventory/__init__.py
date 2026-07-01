@@ -1,6 +1,6 @@
 """Inventory example case for the SDA framework."""
 
-from examples.inventory.dataloader import InventoryScenarioLoader
+from examples.inventory.data import InventoryDataModule
 from examples.inventory.metrics import (
     FillRateMetric,
     InventoryMetric,
@@ -14,7 +14,7 @@ __all__ = [
     "FillRateMetric",
     "InventoryMetric",
     "InventoryModel",
-    "InventoryScenarioLoader",
+    "InventoryDataModule",
     "OrderQuantityMetric",
     "OrderUpToPolicy",
     "StockoutMetric",

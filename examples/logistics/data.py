@@ -15,7 +15,7 @@ from examples.logistics.network import (
     WAREHOUSE_INDEX,
     WAREHOUSES,
 )
-from sda.data import ScenarioBatch, ScenarioLoader
+from sda import DataModule, ScenarioBatch
 
 DEMAND_BY_DAY = np.asarray([1.0, 1.05, 1.2, 1.1, 1.0, 0.55, 0.4], dtype=float)
 MONTHLY_SEASONALITY = np.asarray(
@@ -128,7 +128,7 @@ def synthetic_history(days: int, seed: int | None = None) -> SyntheticHistory:
     )
 
 
-class LogisticsScenarioLoader(ScenarioLoader):
+class LogisticsDataModule(DataModule):
     """Bootstrap logistics futures from synthetic history using 7-day blocks."""
 
     def __init__(
@@ -159,7 +159,8 @@ class LogisticsScenarioLoader(ScenarioLoader):
         self.seed = seed
         self.history = synthetic_history(history_days, seed=seed)
 
-    def __iter__(self) -> Iterator[ScenarioBatch]:
+    def batches(self, stage: str = "evaluate") -> Iterator[ScenarioBatch]:
+        del stage
         rng = np.random.default_rng(self.seed)
         for start in range(0, self.n_scenarios, self.batch_size):
             stop = min(start + self.batch_size, self.n_scenarios)

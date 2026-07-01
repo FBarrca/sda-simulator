@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from sda.model import Policy, SDAModel
+from sda import Policy, SDAModel
 
 
 class InventoryModel(SDAModel):

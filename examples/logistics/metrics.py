@@ -1,53 +1,38 @@
 from __future__ import annotations
 
-from sda.metrics import Metric, MetricStore
-from sda.model import StepRecord
+from sda import InfoMetric
 
 
-class OnTimeRateMetric(Metric):
-    name = "on_time_rate"
-
-    def on_step(self, step: StepRecord, store: MetricStore) -> None:
-        store.log(self.name, step.info[self.name], step.scenario_ids, step.t, "step")
+class OnTimeRateMetric(InfoMetric):
+    def __init__(self) -> None:
+        super().__init__("on_time_rate")
 
 
-class PriorityWeightedOnTimeMetric(Metric):
-    name = "priority_weighted_on_time_rate"
-
-    def on_step(self, step: StepRecord, store: MetricStore) -> None:
-        store.log(self.name, step.info[self.name], step.scenario_ids, step.t, "step")
+class PriorityWeightedOnTimeMetric(InfoMetric):
+    def __init__(self) -> None:
+        super().__init__("priority_weighted_on_time_rate")
 
 
-class LateCostMetric(Metric):
-    name = "late_cost"
-
-    def on_step(self, step: StepRecord, store: MetricStore) -> None:
-        store.log(self.name, step.info[self.name], step.scenario_ids, step.t, "step")
+class LateCostMetric(InfoMetric):
+    def __init__(self) -> None:
+        super().__init__("late_cost")
 
 
-class DispatchCostMetric(Metric):
-    name = "dispatch_cost"
-
-    def on_step(self, step: StepRecord, store: MetricStore) -> None:
-        store.log(self.name, step.info[self.name], step.scenario_ids, step.t, "step")
+class DispatchCostMetric(InfoMetric):
+    def __init__(self) -> None:
+        super().__init__("dispatch_cost")
 
 
-class PendingBacklogMetric(Metric):
-    name = "pending_backlog"
-
-    def on_step(self, step: StepRecord, store: MetricStore) -> None:
-        store.log(self.name, step.info[self.name], step.scenario_ids, step.t, "step")
+class PendingBacklogMetric(InfoMetric):
+    def __init__(self) -> None:
+        super().__init__("pending_backlog")
 
 
-class DispatchedOrderMetric(Metric):
-    name = "dispatched_order_count"
-
-    def on_step(self, step: StepRecord, store: MetricStore) -> None:
-        store.log(self.name, step.info[self.name], step.scenario_ids, step.t, "step")
+class DispatchedOrderMetric(InfoMetric):
+    def __init__(self) -> None:
+        super().__init__("dispatched_order_count")
 
 
-class VehicleUtilizationMetric(Metric):
-    name = "vehicle_utilization"
-
-    def on_step(self, step: StepRecord, store: MetricStore) -> None:
-        store.log(self.name, step.info[self.name], step.scenario_ids, step.t, "step")
+class VehicleUtilizationMetric(InfoMetric):
+    def __init__(self) -> None:
+        super().__init__("vehicle_utilization")

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from examples.logistics.data import LogisticsScenarioLoader
+from examples.logistics.data import LogisticsDataModule
 from examples.logistics.metrics import (
     DispatchCostMetric,
     DispatchedOrderMetric,
@@ -12,13 +12,11 @@ from examples.logistics.metrics import (
 )
 from examples.logistics.models import LogisticsModel
 from examples.logistics.policies import PriorityPolicy
-from sda import SimulationResult, Simulator, StepCostMetric, TotalCostMetric
+from sda import SimulationResult, evaluate
 
 
 def logistics_metrics():
     return [
-        StepCostMetric(),
-        TotalCostMetric(),
         OnTimeRateMetric(),
         PriorityWeightedOnTimeMetric(),
         LateCostMetric(),
@@ -37,31 +35,30 @@ def build_result(
     batch_size: int = 64,
     seed: int = 42,
 ) -> SimulationResult:
-    scenarios = LogisticsScenarioLoader(
+    data = LogisticsDataModule(
         horizon=horizon,
         n_scenarios=n_scenarios,
         batch_size=batch_size,
         seed=seed,
     )
     model = LogisticsModel(policy=policy or PriorityPolicy())
-    simulator = Simulator(metrics=logistics_metrics())
-    return simulator.evaluate(model, scenarios)
+    return evaluate(model, data, extra_metrics=logistics_metrics())
 
 
 def main() -> None:
     result = build_result()
-    print(f"Total cost mean: {result.metric('total_cost').mean():.2f}")
-    print(f"Total cost p95: {result.metric('total_cost').percentile(95):.2f}")
-    print(f"Total cost CVaR 95: {result.metric('total_cost').cvar(0.95):.2f}")
-    print(f"On-time rate mean: {result.metric('on_time_rate').mean():.3f}")
+    print(f"Total cost mean: {result['total_cost'].mean():.2f}")
+    print(f"Total cost p95: {result['total_cost'].percentile(95):.2f}")
+    print(f"Total cost CVaR 95: {result['total_cost'].cvar(0.95):.2f}")
+    print(f"On-time rate mean: {result['on_time_rate'].mean():.3f}")
     print(
         "Priority-weighted on-time mean: "
-        f"{result.metric('priority_weighted_on_time_rate').mean():.3f}"
+        f"{result['priority_weighted_on_time_rate'].mean():.3f}"
     )
-    print(f"Late cost mean: {result.metric('late_cost').mean():.2f}")
-    print(f"Pending backlog mean: {result.metric('pending_backlog').mean():.2f}")
-    print(f"Dispatched orders/day mean: {result.metric('dispatched_order_count').mean():.2f}")
-    print(f"Vehicle utilization mean: {result.metric('vehicle_utilization').mean():.3f}")
+    print(f"Late cost mean: {result['late_cost'].mean():.2f}")
+    print(f"Pending backlog mean: {result['pending_backlog'].mean():.2f}")
+    print(f"Dispatched orders/day mean: {result['dispatched_order_count'].mean():.2f}")
+    print(f"Vehicle utilization mean: {result['vehicle_utilization'].mean():.3f}")
 
 
 if __name__ == "__main__":

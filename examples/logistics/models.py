@@ -21,8 +21,7 @@ from examples.logistics.network import (
     WAREHOUSE_INDEX,
     distance_km,
 )
-from sda.data import ScenarioBatch
-from sda.model import Policy, SDAModel
+from sda import Policy, SDAModel, ScenarioBatch
 
 
 class LogisticsModel(SDAModel):
