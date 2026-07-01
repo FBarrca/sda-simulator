@@ -16,13 +16,14 @@ from examples.logistics.assignment import (
 from examples.logistics.domain import Assignment, LogisticsState, Order, clone_state
 from examples.logistics.network import SKUS, WAREHOUSES
 from examples.logistics.rollout import SyntheticRolloutSampler
-from sda import Policy, StepRecord
+from sda import EventRecord, Policy
 
 
 class DispatchPolicy(Policy):
     name = "dispatch"
 
-    def act(self, state, t: int, history: list[StepRecord]):
+    def act(self, state, env, history: list[EventRecord]):
+        del env, history
         single_state = isinstance(state, LogisticsState)
         states = [state] if single_state else list(state)
         decisions = [self._act_one(logistics_state) for logistics_state in states]
@@ -269,20 +270,15 @@ class LookaheadRolloutPolicy(DispatchPolicy):
 
             for step in range(self.horizon):
                 exogenous = self.sampler.sample(sim_state, step)
-                next_state = self.model.transition(
-                    [sim_state],
-                    [decision],
-                    exogenous,
-                    sim_state.time,
-                )[0]
-                cost = self.model.cost(
-                    [sim_state],
-                    [decision],
-                    exogenous,
-                    [next_state],
-                    sim_state.time,
+                next_state, _info, cost = self.model._transition_one(
+                    state=sim_state,
+                    assignments=decision,
+                    new_orders=tuple(np.asarray(exogenous["orders"], dtype=object)[0]),
+                    traffic=np.asarray(exogenous["traffic_multiplier"], dtype=float)[0],
+                    outages=np.asarray(exogenous["vehicle_outages"], dtype=bool)[0],
+                    t=sim_state.time,
                 )
-                total_reward -= float(np.asarray(cost, dtype=float)[0])
+                total_reward -= float(cost)
                 sim_state = next_state
                 decision = self.base._act_one(sim_state)
 

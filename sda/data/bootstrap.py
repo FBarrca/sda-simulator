@@ -6,8 +6,8 @@ from typing import Any, Literal, cast
 
 import numpy as np
 
-from sda.core import ScenarioBatch
-from sda.data._state import slice_initial_state
+from sda.core import ScenarioBatch, ScenarioSpec
+from sda.data._state import scenario_initial_state
 from sda.data.module import DataModule
 
 BootstrapMethod = Literal[
@@ -94,17 +94,22 @@ class BootstrapDataModule(DataModule):
             sampled_indexes = self._sample_indexes(rng, batch_size=stop - start)
 
             yield ScenarioBatch(
-                initial_state=slice_initial_state(
-                    self.initial_state,
-                    start,
-                    stop,
-                    self.n_scenarios,
-                ),
-                exogenous={
-                    name: values[sampled_indexes]
-                    for name, values in self.history.items()
-                },
-                scenario_ids=self.scenario_ids[start:stop].tolist(),
+                [
+                    ScenarioSpec(
+                        scenario_id=int(self.scenario_ids[index]),
+                        end_time=float(self.horizon),
+                        initial_state=scenario_initial_state(
+                            self.initial_state,
+                            index,
+                            self.n_scenarios,
+                        ),
+                        data={
+                            name: values[sampled_indexes[index - start]]
+                            for name, values in self.history.items()
+                        },
+                    )
+                    for index in range(start, stop)
+                ]
             )
 
     def _sample_indexes(

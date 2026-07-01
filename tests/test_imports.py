@@ -12,8 +12,8 @@ import sda.tracking as tracking
 def test_core_contract_import_identities():
     assert sda.Policy is core.Policy
     assert sda.SDAModel is core.SDAModel
-    assert sda.StepRecord is core.StepRecord
-    assert sda.TrajectoryRecord is core.TrajectoryRecord
+    assert sda.EventRecord is core.EventRecord
+    assert sda.ScenarioSpec is core.ScenarioSpec is data.ScenarioSpec
     assert sda.ScenarioBatch is core.ScenarioBatch is data.ScenarioBatch
     assert sda.DataModule is data.DataModule
     assert sda.ArrayDataModule is data.ArrayDataModule is data_array.ArrayDataModule
@@ -21,13 +21,11 @@ def test_core_contract_import_identities():
     assert sda.GeneratorDataModule is data_generator.GeneratorDataModule
     assert sda.BootstrapDataModule is data.BootstrapDataModule
     assert sda.BootstrapDataModule is data_bootstrap.BootstrapDataModule
+    assert sda.MetricStore is metrics.MetricStore
+    assert sda.MetricSeries is metrics.MetricSeries
+    assert sda.Recorder is metrics.Recorder
+    assert sda.Simulator is simulation.Simulator
     assert sda.evaluate is simulation.evaluate
-    assert sda.StepMetric is metrics.StepMetric
-    assert sda.TrajectoryMetric is metrics.TrajectoryMetric
-    assert sda.InfoMetric is metrics.InfoMetric
-    assert sda.step_metric is metrics.step_metric
-    assert sda.trajectory_metric is metrics.trajectory_metric
-    assert sda.info_metric is metrics.info_metric
     assert sda.MLflowTracker is tracking.MLflowTracker
 
 
@@ -36,29 +34,20 @@ def test_public_surfaces_are_small_and_current():
         "ArrayDataModule",
         "BootstrapDataModule",
         "DataModule",
+        "EventLevel",
+        "EventRecord",
         "GeneratorDataModule",
-        "InfoMetric",
         "MLflowTracker",
-        "Metric",
-        "MetricRow",
         "MetricSeries",
-        "MetricSet",
         "MetricStore",
         "Policy",
+        "Recorder",
         "SDAModel",
         "ScenarioBatch",
+        "ScenarioSpec",
         "SimulationResult",
         "Simulator",
-        "StepCostMetric",
-        "StepMetric",
-        "StepRecord",
-        "TotalCostMetric",
-        "TrajectoryMetric",
-        "TrajectoryRecord",
         "evaluate",
-        "info_metric",
-        "step_metric",
-        "trajectory_metric",
     ]
     assert sorted(data.__all__) == [
         "ArrayDataModule",
@@ -67,4 +56,5 @@ def test_public_surfaces_are_small_and_current():
         "DataModule",
         "GeneratorDataModule",
         "ScenarioBatch",
+        "ScenarioSpec",
     ]

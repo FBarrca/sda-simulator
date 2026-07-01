@@ -1,0 +1,764 @@
+from __future__ import annotations
+
+import argparse
+from dataclasses import dataclass
+from html import escape
+from pathlib import Path
+
+import numpy as np
+
+from examples.multi_echelon_inventory.data import MultiEchelonInventoryDataModule
+from examples.multi_echelon_inventory.domain import (
+    DEFAULT_LEAD_TIME,
+    DEFAULT_NETWORK,
+    DEFAULT_SERVICE_TARGET,
+    REFERENCE_REPLICATIONS,
+)
+from examples.multi_echelon_inventory.main import (
+    build_evaluation,
+    build_policy,
+    build_result,
+)
+from examples.multi_echelon_inventory.models import ServiceMode
+
+DEFAULT_OUTPUT_DIR = Path(__file__).resolve().parent
+
+
+@dataclass(frozen=True)
+class VisualizationPaths:
+    """Paths created by the multi-echelon visualization command."""
+
+    network: Path
+    policy_parameters: Path
+    objective: Path
+    trace: Path
+
+
+@dataclass(frozen=True)
+class ObjectiveCase:
+    """Objective summary for one plotted policy vector."""
+
+    label: str
+    mode: ServiceMode
+    objective: float
+    average_on_hand: float
+    service_penalty: float
+    service_level: np.ndarray
+    is_published: bool
+
+
+def save_all_visualizations(
+    output_dir: str | Path = DEFAULT_OUTPUT_DIR,
+    *,
+    replications: int = REFERENCE_REPLICATIONS,
+    trace_seed: int = 0,
+) -> VisualizationPaths:
+    """Create all SVG visualizations for the multi-echelon example."""
+    output_path = Path(output_dir)
+    output_path.mkdir(parents=True, exist_ok=True)
+    return VisualizationPaths(
+        network=save_network_plot(output_path / "multi_echelon_network.svg"),
+        policy_parameters=save_policy_parameters_plot(
+            output_path / "multi_echelon_policy_parameters.svg",
+        ),
+        objective=save_objective_plot(
+            output_path / "multi_echelon_objective.svg",
+            replications=replications,
+        ),
+        trace=save_inventory_trace_plot(
+            output_path / "multi_echelon_inventory_trace.svg",
+            trace_seed=trace_seed,
+        ),
+    )
+
+
+def save_network_plot(
+    output: str | Path = DEFAULT_OUTPUT_DIR / "multi_echelon_network.svg",
+    *,
+    network=DEFAULT_NETWORK,
+    service_target=DEFAULT_SERVICE_TARGET,
+    lead_time=DEFAULT_LEAD_TIME,
+) -> Path:
+    """Draw the six-node reference supply-chain network with lead times."""
+    output_path = Path(output)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    network_array = np.asarray(network, dtype=int)
+    target = np.asarray(service_target, dtype=float)
+    lead_time_array = np.asarray(lead_time, dtype=float)
+    positions = {
+        0: (92, 270),
+        1: (250, 270),
+        2: (420, 172),
+        3: (420, 368),
+        4: (590, 298),
+        5: (590, 434),
+    }
+    labels = {
+        0: ("0", "Source", "unconstrained"),
+        1: ("1", "Regional stock", "95% service"),
+        2: ("2", "Customer node", "95% service"),
+        3: ("3", "Transship", "diagnostic"),
+        4: ("4", "Customer node", "95% service"),
+        5: ("5", "Customer node", "95% service"),
+    }
+
+    edge_parts: list[str] = []
+    for upstream, downstream in zip(*np.nonzero(network_array), strict=True):
+        x1, y1 = positions[int(upstream)]
+        x2, y2 = positions[int(downstream)]
+        edge_parts.append(
+            f'<line x1="{x1}" y1="{y1}" x2="{x2}" y2="{y2}" '
+            'class="edge" marker-end="url(#arrow)" />'
+        )
+        mid_x, mid_y = (x1 + x2) / 2, (y1 + y2) / 2 - 12
+        lead_days = lead_time_array[int(downstream)]
+        label = f"{lead_days:.0f}d lead time"
+        label_width = 6.4 * len(label) + 10
+        edge_parts.append(
+            f'<rect x="{mid_x - label_width / 2:.1f}" y="{mid_y - 12:.1f}" '
+            f'width="{label_width:.1f}" height="16" rx="4" class="edge-label-bg" />'
+            f'<text x="{mid_x:.1f}" y="{mid_y:.1f}" class="edge-label">{label}</text>'
+        )
+
+    node_parts: list[str] = []
+    for node, (x, y) in positions.items():
+        node_id, title, subtitle = labels[node]
+        target_class = "target" if target[node] > 0 else "neutral"
+        node_parts.append(
+            f'<g class="node {target_class}">'
+            f'<circle cx="{x}" cy="{y}" r="42" />'
+            f'<text x="{x}" y="{y - 10}" class="node-id">{node_id}</text>'
+            f'<text x="{x}" y="{y + 10}" class="node-title">{escape(title)}</text>'
+            f'<text x="{x}" y="{y + 28}" class="node-subtitle">{escape(subtitle)}</text>'
+            "</g>"
+        )
+
+    caption = _wrap_text(
+        "One source feeds five stocking nodes over lanes with empirical "
+        "lead times; nodes 1, 2, 4, and 5 carry a 95% fill-rate target.",
+        x=44,
+        first_y=92,
+        line_height=17,
+        max_chars=64,
+        css_class="caption",
+    )
+
+    body = f"""
+    <defs>
+      <marker id="arrow" markerWidth="12" markerHeight="12" refX="10" refY="6"
+              orient="auto" markerUnits="strokeWidth">
+        <path d="M2,2 L10,6 L2,10 Z" fill="#475569" />
+      </marker>
+    </defs>
+    <rect class="panel" x="24" y="24" width="642" height="478" rx="16" />
+    <text x="44" y="66" class="title">Multi-echelon supply network</text>
+    {caption}
+    {''.join(edge_parts)}
+    {''.join(node_parts)}
+    <g class="legend">
+      <circle cx="48" cy="486" r="8" class="target-dot" />
+      <text x="64" y="491">95% service target</text>
+      <circle cx="218" cy="486" r="8" class="neutral-dot" />
+      <text x="234" y="491">source or diagnostic node</text>
+    </g>
+    """
+    return _write_svg(output_path, 690, 526, body, _network_style())
+
+
+def save_policy_parameters_plot(
+    output: str | Path = DEFAULT_OUTPUT_DIR / "multi_echelon_policy_parameters.svg",
+    *,
+    service_mode: ServiceMode = "lost_sales",
+) -> Path:
+    """Compare the tuned reorder-point and base-stock hyperparameters per node."""
+    output_path = Path(output)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    initial_policy = build_policy(service_mode=service_mode, use_published_solution=False)
+    published_policy = build_policy(service_mode=service_mode, use_published_solution=True)
+
+    node_labels = {1: "Node 1", 2: "Node 2", 3: "Node 3", 4: "Node 4", 5: "Node 5"}
+    nodes = list(node_labels)
+    max_stock = float(
+        max(
+            initial_policy.base_stock[nodes].max(),
+            published_policy.base_stock[nodes].max(),
+        )
+    )
+
+    chart_left = 208
+    chart_width = 508
+    row_height = 24
+    pair_gap = 10
+    group_gap = 22
+    top = 152
+
+    rows: list[str] = []
+    y = top
+    for node in nodes:
+        group_top = y
+        for label, policy, css in (
+            ("Initial guess", initial_policy, "initial"),
+            ("Published", published_policy, "published"),
+        ):
+            rop = float(policy.reorder_point[node])
+            stock = float(policy.base_stock[node])
+            rop_width = chart_width * rop / max_stock
+            stock_width = chart_width * stock / max_stock
+            rows.append(
+                f'<rect x="{chart_left}" y="{y}" width="{chart_width}" '
+                f'height="{row_height}" class="bar-track" />'
+                f'<rect x="{chart_left}" y="{y}" width="{rop_width:.1f}" '
+                f'height="{row_height}" class="bar-rop {css}" />'
+                f'<rect x="{chart_left + rop_width:.1f}" y="{y}" '
+                f'width="{max(stock_width - rop_width, 0):.1f}" height="{row_height}" '
+                f'class="bar-excess {css}" />'
+                f'<text x="{chart_left + 8}" y="{y + row_height / 2 + 4:.1f}" '
+                f'class="bar-caption">{label}</text>'
+                f'<text x="{chart_left + chart_width + 12}" '
+                f'y="{y + row_height / 2 + 4:.1f}" class="bar-value">'
+                f"ROP {rop:.0f} &#8594; stock {stock:.0f}</text>"
+            )
+            y += row_height + pair_gap
+        rows.append(
+            f'<text x="{chart_left - 16}" y="{(group_top + y - pair_gap) / 2 + 4:.1f}" '
+            f'class="node-label" text-anchor="end">{escape(node_labels[node])}</text>'
+        )
+        y += group_gap
+
+    ticks: list[str] = []
+    axis_bottom = y - group_gap + 6
+    for fraction in (0.0, 0.25, 0.5, 0.75, 1.0):
+        x = chart_left + chart_width * fraction
+        ticks.append(
+            f'<line x1="{x:.1f}" y1="{top - 10}" x2="{x:.1f}" y2="{axis_bottom:.1f}" '
+            'class="grid-v" />'
+        )
+        ticks.append(
+            f'<text x="{x:.1f}" y="{top - 18}" class="tick" '
+            f'text-anchor="middle">{max_stock * fraction:.0f}</text>'
+        )
+
+    legend_row_gap = 24
+    legend_y = y + 12
+    height = int(legend_y + legend_row_gap + 40)
+    width = 1000
+    caption = _wrap_text(
+        f"Each pair compares the optimizer's initial guess to the published "
+        f"{service_mode.replace('_', '-')} solution. Bar length is the base "
+        "stock (order-up-to) level; the dark segment is the reorder point.",
+        x=48,
+        first_y=87,
+        line_height=16,
+        max_chars=92,
+        css_class="caption",
+    )
+    body = f"""
+    <rect class="panel" x="24" y="24" width="{width - 48}" height="{height - 48}" rx="16" />
+    <text x="48" y="60" class="title">Reorder-point and base-stock hyperparameters</text>
+    {caption}
+    {''.join(ticks)}
+    {''.join(rows)}
+    <g class="legend" transform="translate({chart_left},{legend_y:.1f})">
+      <rect width="14" height="14" class="bar-rop initial" />
+      <text x="20" y="12">Initial reorder point</text>
+      <rect x="240" width="14" height="14" class="bar-excess initial" />
+      <text x="260" y="12">Initial order-up-to buffer</text>
+      <rect x="0" y="{legend_row_gap}" width="14" height="14" class="bar-rop published" />
+      <text x="20" y="{legend_row_gap + 12}">Published reorder point</text>
+      <rect x="240" y="{legend_row_gap}" width="14" height="14" class="bar-excess published" />
+      <text x="260" y="{legend_row_gap + 12}">Published order-up-to buffer</text>
+    </g>
+    """
+    return _write_svg(output_path, width, height, body, _policy_style())
+
+
+def save_objective_plot(
+    output: str | Path = DEFAULT_OUTPUT_DIR / "multi_echelon_objective.svg",
+    *,
+    replications: int = REFERENCE_REPLICATIONS,
+) -> Path:
+    """Plot initial versus published objective values and service levels."""
+    output_path = Path(output)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    cases = _objective_cases(replications=replications)
+    max_objective = max(case.objective for case in cases)
+    chart_left = 72
+    chart_top = 112
+    chart_width = 496
+    chart_height = 238
+    bar_width = 58
+    gap = 42
+    colors = {
+        ("lost_sales", False): "#64748b",
+        ("lost_sales", True): "#2563eb",
+        ("backorder", False): "#94a3b8",
+        ("backorder", True): "#16a34a",
+    }
+
+    bars: list[str] = []
+    for index, case in enumerate(cases):
+        x = chart_left + index * (bar_width + gap)
+        bar_height = chart_height * case.objective / max_objective
+        y = chart_top + chart_height - bar_height
+        color = colors[(case.mode, case.is_published)]
+        bars.append(
+            f'<rect x="{x:.1f}" y="{y:.1f}" width="{bar_width}" '
+            f'height="{bar_height:.1f}" rx="5" fill="{color}" />'
+            f'<text x="{x + bar_width / 2:.1f}" y="{y - 10:.1f}" '
+            f'class="value">{case.objective:.0f}</text>'
+            f'<text x="{x + bar_width / 2:.1f}" y="{chart_top + chart_height + 24}" '
+            f'class="axis-label">{escape(case.label)}</text>'
+        )
+
+    initial_lost, initial_back, published_lost, published_back = cases
+    lost_improvement = _improvement(initial_lost.objective, published_lost.objective)
+    backorder_improvement = _improvement(
+        initial_back.objective,
+        published_back.objective,
+    )
+    service_rows = _service_level_rows(published_lost, published_back)
+    body = f"""
+    <rect class="panel" x="24" y="24" width="920" height="562" rx="16" />
+    <text x="48" y="64" class="title">Objective and service-level scorecard</text>
+    <text x="48" y="91" class="caption">
+      Objective = average on-hand inventory + 1e6 x service shortfall. Published vectors reduce inventory while meeting targets.
+    </text>
+    <g class="axis">
+      <line x1="{chart_left}" y1="{chart_top + chart_height}" x2="{chart_left + chart_width}" y2="{chart_top + chart_height}" />
+      <line x1="{chart_left}" y1="{chart_top}" x2="{chart_left}" y2="{chart_top + chart_height}" />
+      <text x="{chart_left - 12}" y="{chart_top + 10}" class="tick">{max_objective:.0f}</text>
+      <text x="{chart_left - 12}" y="{chart_top + chart_height}" class="tick">0</text>
+    </g>
+    {''.join(bars)}
+    <g class="callout" transform="translate(620,122)">
+      <text x="0" y="0" class="callout-title">Value from optimization</text>
+      <text x="0" y="34">Lost sales: {lost_improvement:.1f}% less average inventory</text>
+      <text x="0" y="62">Backorder: {backorder_improvement:.1f}% less average inventory</text>
+      <text x="0" y="90">Service penalty: 0 in both published runs</text>
+      <text x="0" y="118">20 seeded replications, horizon 360</text>
+    </g>
+    <g transform="translate(72,422)">
+      <text x="0" y="0" class="section-title">
+        Published solution service levels (black tick = 95% target)
+      </text>
+      {service_rows}
+    </g>
+    """
+    return _write_svg(output_path, 968, 610, body, _scorecard_style())
+
+
+def save_inventory_trace_plot(
+    output: str | Path = DEFAULT_OUTPUT_DIR / "multi_echelon_inventory_trace.svg",
+    *,
+    service_mode: ServiceMode = "lost_sales",
+    trace_seed: int = 0,
+    focus_node: int = 2,
+    window_days: int = 120,
+) -> Path:
+    """Plot one daily diagnostic trajectory, zoomed in for legibility.
+
+    ``focus_node`` gets its reorder point and base stock drawn as dashed
+    reference lines so the hyperparameters that shape its sawtooth are visible
+    directly on the chart.
+    """
+    output_path = Path(output)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    data = MultiEchelonInventoryDataModule(
+        n_scenarios=1,
+        batch_size=1,
+        scenario_seeds=[trace_seed],
+    )
+    policy = build_policy(service_mode=service_mode, use_published_solution=True)
+    result = build_result(
+        data=data,
+        service_mode=service_mode,
+        use_published_solution=True,
+        record_daily_metrics=True,
+    )
+    _, times, total = result["total_on_hand"].to_trajectory_matrix()
+    total_values = total[0]
+    node_values = {
+        node: result[f"on_hand_inventory_node_{node}"].to_trajectory_matrix()[2][0]
+        for node in range(1, 6)
+    }
+
+    full_horizon = int(np.nanmax(times))
+    window = times <= window_days
+    windowed_times = times[window]
+    windowed_total = total_values[window]
+    windowed_nodes = {node: values[window] for node, values in node_values.items()}
+
+    chart = _line_chart(
+        windowed_times,
+        windowed_total,
+        windowed_nodes,
+        left=72,
+        top=150,
+        width=736,
+        height=250,
+        focus_node=focus_node,
+        reorder_point=float(policy.reorder_point[focus_node]),
+        base_stock=float(policy.base_stock[focus_node]),
+    )
+    caption = _wrap_text(
+        f"Published {service_mode.replace('_', '-')} policy, seed {trace_seed}. First "
+        f"{window_days} of {full_horizon} simulated days shown for legibility. Node "
+        f"{focus_node} (thick line) reorders up to its "
+        f"{policy.base_stock[focus_node]:.0f}-unit base stock (upper dashed line) "
+        "whenever inventory position falls to its "
+        f"{policy.reorder_point[focus_node]:.0f}-unit reorder point (lower dashed line).",
+        x=48,
+        first_y=90,
+        line_height=16,
+        max_chars=98,
+        css_class="caption",
+    )
+    body = f"""
+    <rect class="panel" x="24" y="24" width="884" height="442" rx="16" />
+    <text x="48" y="64" class="title">Daily inventory dynamics</text>
+    {caption}
+    {chart}
+    """
+    return _write_svg(output_path, 932, 490, body, _trace_style())
+
+
+def _objective_cases(*, replications: int) -> list[ObjectiveCase]:
+    specs = [
+        ("Lost initial", "lost_sales", False),
+        ("Backorder initial", "backorder", False),
+        ("Lost published", "lost_sales", True),
+        ("Backorder published", "backorder", True),
+    ]
+    cases: list[ObjectiveCase] = []
+    for label, mode, use_published in specs:
+        evaluation = build_evaluation(
+            service_mode=mode,
+            use_published_solution=use_published,
+            replications=replications,
+            batch_size=1,
+        )
+        cases.append(
+            ObjectiveCase(
+                label=label,
+                mode=mode,
+                objective=evaluation.summary.objective,
+                average_on_hand=evaluation.summary.average_on_hand,
+                service_penalty=evaluation.summary.service_penalty,
+                service_level=evaluation.summary.service_level,
+                is_published=use_published,
+            )
+        )
+    return cases
+
+
+def _service_level_rows(lost: ObjectiveCase, backorder: ObjectiveCase) -> str:
+    target = np.asarray(DEFAULT_SERVICE_TARGET, dtype=float)
+    rows: list[str] = []
+    row_y = 28
+    for node in range(len(target)):
+        if target[node] <= 0:
+            continue
+        lost_width = 180 * min(lost.service_level[node], 1.0)
+        back_width = 180 * min(backorder.service_level[node], 1.0)
+        target_x = 84 + 180 * target[node]
+        rows.append(
+            f'<text x="0" y="{row_y + 11}" class="node-label">Node {node}</text>'
+            f'<rect x="84" y="{row_y}" width="180" height="10" class="bar-bg" />'
+            f'<rect x="84" y="{row_y}" width="{lost_width:.1f}" height="10" class="lost-bar" />'
+            f'<line x1="{target_x:.1f}" y1="{row_y - 4}" x2="{target_x:.1f}" y2="{row_y + 14}" class="target-line" />'
+            f'<text x="276" y="{row_y + 11}" class="metric-label">lost {lost.service_level[node]:.1%}</text>'
+            f'<rect x="400" y="{row_y}" width="180" height="10" class="bar-bg" />'
+            f'<rect x="400" y="{row_y}" width="{back_width:.1f}" height="10" class="back-bar" />'
+            f'<line x1="{400 + 180 * target[node]:.1f}" y1="{row_y - 4}" x2="{400 + 180 * target[node]:.1f}" y2="{row_y + 14}" class="target-line" />'
+            f'<text x="592" y="{row_y + 11}" class="metric-label">backorder {backorder.service_level[node]:.1%}</text>'
+        )
+        row_y += 28
+    return "".join(rows)
+
+
+def _line_chart(
+    times: np.ndarray,
+    total_values: np.ndarray,
+    node_values: dict[int, np.ndarray],
+    *,
+    left: float,
+    top: float,
+    width: float,
+    height: float,
+    focus_node: int | None = None,
+    reorder_point: float | None = None,
+    base_stock: float | None = None,
+) -> str:
+    y_max = float(max(np.nanmax(total_values), *(np.nanmax(v) for v in node_values.values())))
+    if base_stock is not None:
+        y_max = max(y_max, base_stock * 1.08)
+    y_min = 0.0
+    x_min = float(np.nanmin(times))
+    x_max = float(np.nanmax(times))
+    colors = {
+        "total": "#0f172a",
+        1: "#2563eb",
+        2: "#16a34a",
+        3: "#f59e0b",
+        4: "#dc2626",
+        5: "#7c3aed",
+    }
+
+    def sx(value: float) -> float:
+        return left + (float(value) - x_min) / (x_max - x_min) * width
+
+    def sy(value: float) -> float:
+        return top + height - (float(value) - y_min) / (y_max - y_min) * height
+
+    grid = [
+        f'<line x1="{left}" y1="{top + height * index / 4}" x2="{left + width}" y2="{top + height * index / 4}" class="grid" />'
+        for index in range(5)
+    ]
+    lines = [
+        f'<polyline class="total-line" points="{_points(times, total_values, sx, sy)}" />'
+    ]
+    for node, values in node_values.items():
+        is_focus = node == focus_node
+        stroke_width = 3.2 if is_focus else 1.5
+        opacity = 1.0 if is_focus else 0.4
+        lines.append(
+            f'<polyline class="node-line" stroke="{colors[node]}" '
+            f'stroke-width="{stroke_width}" opacity="{opacity}" '
+            f'points="{_points(times, values, sx, sy)}" />'
+        )
+
+    reference: list[str] = []
+    if reorder_point is not None:
+        y = sy(reorder_point)
+        reference.append(
+            f'<line x1="{left}" y1="{y:.1f}" x2="{left + width}" y2="{y:.1f}" '
+            'class="reference-line rop" />'
+        )
+        reference.append(
+            f'<text x="{left + width + 8}" y="{y + 4:.1f}" class="reference-label">'
+            f"ROP {reorder_point:.0f}</text>"
+        )
+    if base_stock is not None:
+        y = sy(base_stock)
+        reference.append(
+            f'<line x1="{left}" y1="{y:.1f}" x2="{left + width}" y2="{y:.1f}" '
+            'class="reference-line stock" />'
+        )
+        reference.append(
+            f'<text x="{left + width + 8}" y="{y + 4:.1f}" class="reference-label">'
+            f"stock {base_stock:.0f}</text>"
+        )
+
+    legend_items = [
+        ("Total", colors["total"]),
+        ("Node 1", colors[1]),
+        ("Node 2", colors[2]),
+        ("Node 3", colors[3]),
+        ("Node 4", colors[4]),
+        ("Node 5", colors[5]),
+    ]
+    legend = []
+    for index, (label, color) in enumerate(legend_items):
+        x = left + index * 118
+        y = top + height + 46
+        legend.append(
+            f'<line x1="{x}" y1="{y}" x2="{x + 24}" y2="{y}" stroke="{color}" stroke-width="3" />'
+            f'<text x="{x + 32}" y="{y + 5}" class="legend">{label}</text>'
+        )
+
+    return "".join(
+        [
+            *grid,
+            f'<line x1="{left}" y1="{top + height}" x2="{left + width}" y2="{top + height}" class="axis" />',
+            f'<line x1="{left}" y1="{top}" x2="{left}" y2="{top + height}" class="axis" />',
+            f'<text x="{left - 12}" y="{top + 6}" class="tick">{y_max:.0f}</text>',
+            f'<text x="{left - 12}" y="{top + height}" class="tick">0</text>',
+            f'<text x="{left}" y="{top + height + 24}" class="tick">day {int(x_min)}</text>',
+            f'<text x="{left + width}" y="{top + height + 24}" class="tick end">day {int(x_max)}</text>',
+            *lines,
+            *reference,
+            *legend,
+        ]
+    )
+
+
+def _points(xs, ys, sx, sy) -> str:
+    return " ".join(f"{sx(x):.1f},{sy(y):.1f}" for x, y in zip(xs, ys, strict=True))
+
+
+def _wrap_text(
+    text: str,
+    *,
+    x: float,
+    first_y: float,
+    line_height: float,
+    max_chars: int,
+    css_class: str,
+) -> str:
+    """Break ``text`` into left-aligned ``<text>`` lines under ``max_chars``.
+
+    SVG does not wrap text automatically, so long captions must be split into
+    explicit lines to avoid overlapping other chart elements.
+    """
+    words = text.split()
+    lines: list[str] = []
+    current = ""
+    for word in words:
+        candidate = f"{current} {word}".strip()
+        if len(candidate) > max_chars and current:
+            lines.append(current)
+            current = word
+        else:
+            current = candidate
+    if current:
+        lines.append(current)
+    return "".join(
+        f'<text x="{x}" y="{first_y + index * line_height:.1f}" class="{css_class}">'
+        f"{escape(line)}</text>"
+        for index, line in enumerate(lines)
+    )
+
+
+def _improvement(before: float, after: float) -> float:
+    return 100.0 * (before - after) / before
+
+
+def _write_svg(output_path: Path, width: int, height: int, body: str, style: str) -> Path:
+    output_path.write_text(
+        "\n".join(
+            [
+                '<?xml version="1.0" encoding="UTF-8"?>',
+                f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" viewBox="0 0 {width} {height}" role="img">',
+                "<style>",
+                style,
+                "</style>",
+                body,
+                "</svg>",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    return output_path
+
+
+def _base_style() -> str:
+    return """
+    text { font-family: Arial, Helvetica, sans-serif; fill: #0f172a; }
+    .panel { fill: #ffffff; stroke: #d8dee9; stroke-width: 1.2; }
+    .title { font-size: 24px; font-weight: 700; }
+    .caption { font-size: 13px; fill: #475569; }
+    .section-title { font-size: 16px; font-weight: 700; }
+    .tick { font-size: 11px; fill: #64748b; text-anchor: end; }
+    .axis line, .axis { stroke: #94a3b8; stroke-width: 1.1; }
+    .grid { stroke: #e2e8f0; stroke-width: 1; }
+    """
+
+
+def _network_style() -> str:
+    return (
+        _base_style()
+        + """
+    .edge { stroke: #475569; stroke-width: 3.2; opacity: 0.78; }
+    .edge-label-bg { fill: #ffffff; opacity: 0.9; }
+    .edge-label { font-size: 11px; font-weight: 700; fill: #334155; text-anchor: middle; }
+    .node circle { stroke-width: 2; }
+    .node.target circle { fill: #e0f2fe; stroke: #2563eb; }
+    .node.neutral circle { fill: #f8fafc; stroke: #64748b; }
+    .node-id { font-size: 18px; font-weight: 700; text-anchor: middle; }
+    .node-title { font-size: 11px; font-weight: 700; text-anchor: middle; }
+    .node-subtitle { font-size: 10px; fill: #475569; text-anchor: middle; }
+    .legend text { font-size: 12px; fill: #475569; }
+    .target-dot { fill: #e0f2fe; stroke: #2563eb; }
+    .neutral-dot { fill: #f8fafc; stroke: #64748b; }
+    """
+    )
+
+
+def _scorecard_style() -> str:
+    return (
+        _base_style()
+        + """
+    .value { font-size: 13px; font-weight: 700; text-anchor: middle; }
+    .axis-label { font-size: 11px; fill: #475569; text-anchor: middle; }
+    .callout-title { font-size: 17px; font-weight: 700; }
+    .callout text { font-size: 14px; fill: #334155; }
+    .bar-bg { fill: #e2e8f0; rx: 4; }
+    .lost-bar { fill: #2563eb; rx: 4; }
+    .back-bar { fill: #16a34a; rx: 4; }
+    .target-line { stroke: #0f172a; stroke-width: 2; }
+    .node-label { font-size: 12px; font-weight: 700; }
+    .metric-label { font-size: 12px; fill: #475569; }
+    """
+    )
+
+
+def _trace_style() -> str:
+    return (
+        _base_style()
+        + """
+    .total-line { fill: none; stroke: #0f172a; stroke-width: 3.2; }
+    .node-line { fill: none; stroke-width: 1.7; opacity: 0.86; }
+    .legend { font-size: 12px; fill: #475569; }
+    .end { text-anchor: end; }
+    .reference-line { stroke-width: 1.6; stroke-dasharray: 6 5; }
+    .reference-line.rop { stroke: #dc2626; }
+    .reference-line.stock { stroke: #16a34a; }
+    .reference-label { font-size: 11px; font-weight: 700; fill: #334155; }
+    """
+    )
+
+
+def _policy_style() -> str:
+    return (
+        _base_style()
+        + """
+    .bar-track { fill: #f1f5f9; }
+    .bar-rop.initial { fill: #94a3b8; }
+    .bar-excess.initial { fill: #cbd5e1; }
+    .bar-rop.published { fill: #1d4ed8; }
+    .bar-excess.published { fill: #93c5fd; }
+    .bar-caption { font-size: 11px; font-weight: 700; fill: #1e293b; }
+    .bar-value { font-size: 12px; fill: #334155; }
+    .node-label { font-size: 13px; font-weight: 700; }
+    .grid-v { stroke: #e2e8f0; stroke-width: 1; }
+    .legend rect { rx: 3; }
+    .legend text { font-size: 12px; fill: #475569; }
+    """
+    )
+
+
+def main() -> None:
+    """Create the multi-echelon example SVG visualizations."""
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--output-dir",
+        default=str(DEFAULT_OUTPUT_DIR),
+        help="directory where SVG files are written",
+    )
+    parser.add_argument(
+        "--replications",
+        type=int,
+        default=REFERENCE_REPLICATIONS,
+        help="replications used for the objective scorecard",
+    )
+    parser.add_argument(
+        "--trace-seed",
+        type=int,
+        default=0,
+        help="scenario seed used for the daily inventory trace",
+    )
+    args = parser.parse_args()
+
+    paths = save_all_visualizations(
+        args.output_dir,
+        replications=args.replications,
+        trace_seed=args.trace_seed,
+    )
+    for path in paths.__dict__.values():
+        print(f"Saved {path.resolve()}")
+
+
+if __name__ == "__main__":
+    main()

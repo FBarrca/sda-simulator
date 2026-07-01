@@ -53,18 +53,18 @@ def test_logistics_data_module_batches_and_bootstraps_seven_day_blocks():
 
     assert [batch.batch_size for batch in batches] == [2, 2, 1]
     first_batch = batches[0]
-    assert first_batch.horizon == 10
-    assert len(first_batch.initial_state) == 2
-    assert first_batch.exogenous["orders"].shape == (2, 10)
-    assert first_batch.exogenous["traffic_multiplier"].shape == (
-        2,
+    first_scenario = first_batch.scenarios[0]
+    assert first_batch.end_time == 10
+    assert len(first_batch.scenarios) == 2
+    assert first_scenario.data["orders"].shape == (10,)
+    assert first_scenario.data["traffic_multiplier"].shape == (
         10,
         len(WAREHOUSES),
         len(CUSTOMERS),
     )
-    assert first_batch.exogenous["vehicle_outages"].shape == (2, 10, len(VEHICLES))
+    assert first_scenario.data["vehicle_outages"].shape == (10, len(VEHICLES))
     np.testing.assert_array_equal(
-        np.diff(first_batch.exogenous["history_day_index"][0, :7]),
+        np.diff(first_scenario.data["history_day_index"][:7]),
         np.ones(6, dtype=int),
     )
 
@@ -80,10 +80,10 @@ def test_logistics_data_module_batches_and_bootstraps_seven_day_blocks():
         )
     )
     np.testing.assert_array_equal(
-        first_batch.exogenous["history_day_index"],
-        repeated.exogenous["history_day_index"],
+        first_scenario.data["history_day_index"],
+        repeated.scenarios[0].data["history_day_index"],
     )
-    assert first_batch.exogenous["orders"][0, 0] == repeated.exogenous["orders"][0, 0]
+    assert first_scenario.data["orders"][0] == repeated.scenarios[0].data["orders"][0]
 
 
 def test_logistics_model_enforces_assignment_feasibility():
@@ -107,23 +107,23 @@ def test_logistics_model_enforces_assignment_feasibility():
     orders[0] = ()
     outages = np.zeros((1, len(VEHICLES)), dtype=bool)
     outages[0, VEHICLE_INDEX["V_MAD_2"]] = True
-    exogenous = {
-        "orders": orders,
-        "traffic_multiplier": np.ones((1, len(WAREHOUSES), len(CUSTOMERS))),
-        "vehicle_outages": outages,
-    }
     model = LogisticsModel(GreedyPolicy())
 
-    next_state = model.transition([state], [assignments], exogenous, 0)[0]
-    cost = model.cost([state], [assignments], exogenous, [next_state], 0)
-    info = model.info([state], [assignments], exogenous, [next_state], cost, 0)
+    next_state, info, cost = model._transition_one(
+        state=state,
+        assignments=assignments,
+        new_orders=tuple(orders[0]),
+        traffic=np.ones((len(WAREHOUSES), len(CUSTOMERS))),
+        outages=outages[0],
+        t=0,
+    )
 
     assert len(next_state.completed_orders) == 1
     assert next_state.completed_orders[0].order_id == 1
     assert next_state.inventory["W_MADRID"]["AMBIENT_FOOD"] == pytest.approx(555)
     assert {order.order_id for order in next_state.pending_orders} == {2, 3, 4, 5}
-    assert info["invalid_assignment_count"].tolist() == [4.0]
-    assert cost[0] >= 4 * 20
+    assert info["invalid_assignment_count"] == pytest.approx(4.0)
+    assert cost >= 4 * 20
 
 
 @pytest.mark.parametrize(

@@ -8,13 +8,14 @@ Run example commands from the repository root so both ``sda`` and
 ``examples`` are importable.
 
 If you are deciding whether your own problem fits ``sda``, read
-:doc:`use_cases` first. The pages below then show two concrete source-tree
+:doc:`use_cases` first. The pages below then show three concrete source-tree
 applications.
 
 .. toctree::
    :maxdepth: 2
 
    examples/inventory
+   examples/multi_echelon_inventory
    examples/logistics
 
 Available Examples
@@ -23,6 +24,12 @@ Available Examples
 Inventory
    A compact lost-sales inventory model that evaluates an order-up-to policy
    against Poisson demand futures.
+
+Multi-Echelon Inventory
+   A faithful SimPy-backed SDA reconstruction of the reference six-node
+   multi-echelon inventory optimization model, including lost-sales and
+   backorder modes, empirical bootstrap data, and the original
+   service-penalized objective.
 
 Logistics Dispatch
    A fuller walkthrough of a Spanish road-freight dispatch problem with

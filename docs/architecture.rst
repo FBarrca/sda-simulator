@@ -1,7 +1,7 @@
 Architecture Map
 ================
 
-``sda`` is a small kernel with one public workflow:
+``sda`` has one public workflow:
 
 .. code-block:: python
 
@@ -14,116 +14,79 @@ Package Boundaries
 ------------------
 
 ``sda.core``
-   Canonical contracts and records: ``ScenarioBatch``, ``Policy``,
-   ``SDAModel``, ``StepRecord``, and ``TrajectoryRecord``.
+   Canonical contracts and records: ``ScenarioSpec``, ``ScenarioBatch``,
+   ``EventRecord``, ``Policy``, and ``SDAModel``.
 
 ``sda.data``
-   ``DataModule`` plus concrete data modules for arrays, generators, and
+   ``DataModule`` plus concrete scenario sources for arrays, generators, and
    bootstrap history.
 
 ``sda.simulation``
-   ``evaluate``, ``Simulator``, and ``SimulationResult``. ``Simulator`` is the
-   trainer-like configured runner for simulations.
+   ``evaluate``, ``Simulator``, and ``SimulationResult``. ``Simulator`` owns
+   data lifecycle and SimPy environment execution.
 
 ``sda.metrics``
-   Metric records, metric storage, query helpers, and built-in cost metrics.
+   ``Recorder``, ``MetricStore``, and ``MetricSeries``. Metrics are emitted by
+   SimPy processes and queried after evaluation.
 
 ``sda.tracking``
-   Optional experiment tracking integrations such as MLflow result-summary
-   logging.
+   Optional MLflow result-summary logging.
 
 ``sda.__init__``
    The preferred public import surface.
 
-Architecture Rules
-------------------
-
-* ``sda.core`` has no internal imports.
-* ``sda.data`` turns scenario sources into ``ScenarioBatch`` streams through
-  ``DataModule.batches(stage)``.
-* ``sda.simulation`` orchestrates data lifecycle, rollout order, and metrics.
-  It does not define policies, scenario generation, model dynamics, or metric
-  meanings.
-* ``sda.metrics`` reads records; it does not create data or choose policies.
-* ``sda.tracking`` logs completed results; it does not run simulations or
-  compute domain metrics.
-* The public vocabulary is ``Simulator``, not ``Trainer``. Do not add a
-  ``Trainer`` alias or a second orchestration class.
-
-Public Import Map
------------------
-
-Use the top-level package for application code:
-
-.. code-block:: python
-
-   from sda import (
-       ArrayDataModule,
-       BootstrapDataModule,
-       DataModule,
-       GeneratorDataModule,
-       Policy,
-       SDAModel,
-       evaluate,
-   )
-
 Data Lifecycle
 --------------
-
-``evaluate`` handles the ``DataModule`` lifecycle:
 
 .. code-block:: text
 
    data.prepare_data()
    data.setup(stage)
    for batch in data.batches(stage):
-       rollout batch
+       for scenario in batch.scenarios:
+           run scenario
 
-Stage-specific behavior belongs inside ``setup(stage)`` or ``batches(stage)``.
+Stage-specific behavior belongs inside ``setup(stage)`` or
+``batches(stage)``.
 
-Rollout Loop
-------------
-
-Each ``ScenarioBatch`` follows the same loop:
+Scenario Lifecycle
+------------------
 
 .. code-block:: text
 
-   model.initial_state(batch)
-   for each t in horizon:
-       model.decide(state, t, history)
-       model.transition(state, decision, exogenous_t, t)
-       model.cost(state, decision, exogenous_t, next_state, t)
-       model.info(...)
-       metrics.on_step(...)
-   metrics.on_trajectory(...)
+   env = simpy.Environment()
+   recorder = Recorder(store, scenario_id=scenario.scenario_id, env=env)
+   state = model.build(env, scenario, recorder)
+   env.run(until=scenario.end_time)
+   model.finalize(state, scenario, recorder)
+   recorder.close()
 
-The decision is made before ``exogenous_t`` is exposed to the model. A policy
-sees only ``state``, ``t``, and completed ``history``. Information observed
-before the decision should already be part of ``state``; uncertainty realized
-after the decision belongs in ``ScenarioBatch.exogenous``.
+If ``build`` returns a SimPy generator, the simulator schedules it as a
+process. Models may also register processes inside ``build`` and return a
+domain state object.
 
-Minimal Mental Model
---------------------
+Responsibility Boundaries
+-------------------------
 
-Keep application code separated by responsibility:
+``Policy``
+   Decision logic only.
 
-``data``
-   A ``DataModule`` that yields scenario batches.
+``SDAModel``
+   SimPy processes, state transitions, costs, and domain diagnostics.
 
-``policy``
-   A ``Policy`` implementation.
+``DataModule``
+   Scenario construction and batching.
 
-``model``
-   An ``SDAModel`` implementation.
+``Recorder`` / ``MetricStore``
+   Metric observation logging and querying.
 
-``metrics``
-   Optional domain metrics.
+``Simulator``
+   Orchestration, not domain rules.
 
 Lightning-Inspired Analogy
 --------------------------
 
-``Simulator`` plays the role that ``Trainer`` plays in PyTorch Lightning, but
-with simulation semantics. ``SDAModel`` plus ``Policy`` replace
-``LightningModule``, ``DataModule`` keeps the data lifecycle role, ``Metric``
-objects replace ``self.log(...)`` calls, and ``MLflowTracker`` is the minimal
-MLflow logger equivalent.
+``Simulator`` plays the small configured-runner role that ``Trainer`` plays in
+PyTorch Lightning, but with simulation vocabulary. ``SDAModel`` plus
+``Policy`` replace ``LightningModule``, ``DataModule`` keeps the data
+lifecycle role, and ``MLflowTracker`` is the minimal MLflow logger equivalent.

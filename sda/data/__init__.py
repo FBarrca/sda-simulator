@@ -1,6 +1,6 @@
 """Scenario data modules."""
 
-from sda.core import ScenarioBatch
+from sda.core import ScenarioBatch, ScenarioSpec
 from sda.data.array import ArrayDataModule
 from sda.data.bootstrap import BootstrapDataModule, BootstrapMethod
 from sda.data.generator import GeneratorDataModule
@@ -13,4 +13,5 @@ __all__ = [
     "DataModule",
     "GeneratorDataModule",
     "ScenarioBatch",
+    "ScenarioSpec",
 ]

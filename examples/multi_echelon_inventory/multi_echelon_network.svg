@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="690" height="526" viewBox="0 0 690 526" role="img">
+<style>
+
+    text { font-family: Arial, Helvetica, sans-serif; fill: #0f172a; }
+    .panel { fill: #ffffff; stroke: #d8dee9; stroke-width: 1.2; }
+    .title { font-size: 24px; font-weight: 700; }
+    .caption { font-size: 13px; fill: #475569; }
+    .section-title { font-size: 16px; font-weight: 700; }
+    .tick { font-size: 11px; fill: #64748b; text-anchor: end; }
+    .axis line, .axis { stroke: #94a3b8; stroke-width: 1.1; }
+    .grid { stroke: #e2e8f0; stroke-width: 1; }
+    
+    .edge { stroke: #475569; stroke-width: 3.2; opacity: 0.78; }
+    .edge-label-bg { fill: #ffffff; opacity: 0.9; }
+    .edge-label { font-size: 11px; font-weight: 700; fill: #334155; text-anchor: middle; }
+    .node circle { stroke-width: 2; }
+    .node.target circle { fill: #e0f2fe; stroke: #2563eb; }
+    .node.neutral circle { fill: #f8fafc; stroke: #64748b; }
+    .node-id { font-size: 18px; font-weight: 700; text-anchor: middle; }
+    .node-title { font-size: 11px; font-weight: 700; text-anchor: middle; }
+    .node-subtitle { font-size: 10px; fill: #475569; text-anchor: middle; }
+    .legend text { font-size: 12px; fill: #475569; }
+    .target-dot { fill: #e0f2fe; stroke: #2563eb; }
+    .neutral-dot { fill: #f8fafc; stroke: #64748b; }
+    
+</style>
+
+    <defs>
+      <marker id="arrow" markerWidth="12" markerHeight="12" refX="10" refY="6"
+              orient="auto" markerUnits="strokeWidth">
+        <path d="M2,2 L10,6 L2,10 Z" fill="#475569" />
+      </marker>
+    </defs>
+    <rect class="panel" x="24" y="24" width="642" height="478" rx="16" />
+    <text x="44" y="66" class="title">Multi-echelon supply network</text>
+    <text x="44" y="92.0" class="caption">One source feeds five stocking nodes over lanes with empirical</text><text x="44" y="109.0" class="caption">lead times; nodes 1, 2, 4, and 5 carry a 95% fill-rate target.</text>
+    <line x1="92" y1="270" x2="250" y2="270" class="edge" marker-end="url(#arrow)" /><rect x="127.6" y="246.0" width="86.8" height="16" rx="4" class="edge-label-bg" /><text x="171.0" y="258.0" class="edge-label">3d lead time</text><line x1="250" y1="270" x2="420" y2="172" class="edge" marker-end="url(#arrow)" /><rect x="291.6" y="197.0" width="86.8" height="16" rx="4" class="edge-label-bg" /><text x="335.0" y="209.0" class="edge-label">4d lead time</text><line x1="250" y1="270" x2="420" y2="368" class="edge" marker-end="url(#arrow)" /><rect x="291.6" y="295.0" width="86.8" height="16" rx="4" class="edge-label-bg" /><text x="335.0" y="307.0" class="edge-label">4d lead time</text><line x1="420" y1="368" x2="590" y2="298" class="edge" marker-end="url(#arrow)" /><rect x="461.6" y="309.0" width="86.8" height="16" rx="4" class="edge-label-bg" /><text x="505.0" y="321.0" class="edge-label">2d lead time</text><line x1="420" y1="368" x2="590" y2="434" class="edge" marker-end="url(#arrow)" /><rect x="461.6" y="377.0" width="86.8" height="16" rx="4" class="edge-label-bg" /><text x="505.0" y="389.0" class="edge-label">2d lead time</text>
+    <g class="node neutral"><circle cx="92" cy="270" r="42" /><text x="92" y="260" class="node-id">0</text><text x="92" y="280" class="node-title">Source</text><text x="92" y="298" class="node-subtitle">unconstrained</text></g><g class="node target"><circle cx="250" cy="270" r="42" /><text x="250" y="260" class="node-id">1</text><text x="250" y="280" class="node-title">Regional stock</text><text x="250" y="298" class="node-subtitle">95% service</text></g><g class="node target"><circle cx="420" cy="172" r="42" /><text x="420" y="162" class="node-id">2</text><text x="420" y="182" class="node-title">Customer node</text><text x="420" y="200" class="node-subtitle">95% service</text></g><g class="node neutral"><circle cx="420" cy="368" r="42" /><text x="420" y="358" class="node-id">3</text><text x="420" y="378" class="node-title">Transship</text><text x="420" y="396" class="node-subtitle">diagnostic</text></g><g class="node target"><circle cx="590" cy="298" r="42" /><text x="590" y="288" class="node-id">4</text><text x="590" y="308" class="node-title">Customer node</text><text x="590" y="326" class="node-subtitle">95% service</text></g><g class="node target"><circle cx="590" cy="434" r="42" /><text x="590" y="424" class="node-id">5</text><text x="590" y="444" class="node-title">Customer node</text><text x="590" y="462" class="node-subtitle">95% service</text></g>
+    <g class="legend">
+      <circle cx="48" cy="486" r="8" class="target-dot" />
+      <text x="64" y="491">95% service target</text>
+      <circle cx="218" cy="486" r="8" class="neutral-dot" />
+      <text x="234" y="491">source or diagnostic node</text>
+    </g>
+    
+</svg>

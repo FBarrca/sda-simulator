@@ -48,19 +48,26 @@ class FakeRun:
 
 
 class ZeroPolicy(Policy):
-    def act(self, state, t, history):
-        return np.zeros_like(state, dtype=float)
+    def act(self, state, env, history):
+        del state, env, history
+        return 0.0
 
 
 class DemandAccumulationModel(SDAModel):
-    def transition(self, state, decision, exogenous, t):
-        return np.asarray(state, dtype=float) + np.asarray(
-            exogenous["demand"],
-            dtype=float,
-        )
+    def build(self, env, scenario, recorder):
+        state = {"inventory": 0.0}
+        env.process(self._run(env, scenario, recorder, state))
+        return state
 
-    def cost(self, state, decision, exogenous, next_state, t):
-        return np.asarray(exogenous["demand"], dtype=float)
+    def _run(self, env, scenario, recorder, state):
+        for demand in np.asarray(scenario.data["demand"], dtype=float):
+            state["inventory"] += float(demand)
+            recorder.cost(demand)
+            yield env.timeout(1.0)
+
+    def finalize(self, state, scenario, recorder):
+        del scenario
+        recorder.trajectory("ending_inventory", state["inventory"])
 
 
 def make_data():
@@ -71,10 +78,7 @@ def make_data():
         ],
         dtype=float,
     )
-    return ArrayDataModule(
-        {"demand": demand},
-        initial_state=np.zeros(demand.shape[0]),
-    )
+    return ArrayDataModule({"demand": demand})
 
 
 def test_evaluate_logs_result_summary_to_mlflow(monkeypatch):
@@ -89,11 +93,7 @@ def test_evaluate_logs_result_summary_to_mlflow(monkeypatch):
         nested=True,
     )
 
-    result = evaluate(
-        DemandAccumulationModel(ZeroPolicy()),
-        make_data(),
-        tracking=tracker,
-    )
+    result = evaluate(DemandAccumulationModel(ZeroPolicy()), make_data(), tracking=tracker)
 
     assert result["total_cost"].values().tolist() == [3, 7]
     assert mlflow.tracking_uri == "file:///tmp/mlruns"
@@ -105,13 +105,12 @@ def test_evaluate_logs_result_summary_to_mlflow(monkeypatch):
         "sda.policy": "ZeroPolicy",
         "sda.data": "ArrayDataModule",
         "sda.stage": "evaluate",
-        "sda.keep_history": "True",
     }
     assert mlflow.tags == {"team": "analytics"}
     assert mlflow.metrics["total_cost.count"] == pytest.approx(2)
     assert mlflow.metrics["total_cost.mean"] == pytest.approx(5)
-    assert mlflow.metrics["step_cost.count"] == pytest.approx(4)
-    assert mlflow.metrics["step_cost.mean"] == pytest.approx(2.5)
+    assert mlflow.metrics["cost.count"] == pytest.approx(4)
+    assert mlflow.metrics["cost.mean"] == pytest.approx(2.5)
 
 
 def test_mlflow_tracker_logs_existing_result_and_sanitizes_metric_keys(monkeypatch):
@@ -130,8 +129,10 @@ def test_mlflow_tracker_logs_existing_result_and_sanitizes_metric_keys(monkeypat
     assert mlflow.params == {"batch size": "2"}
     assert mlflow.tags == {"scenario/set": "demo"}
     assert sorted(mlflow.metrics) == [
-        "eval.step_cost.mean",
-        "eval.step_cost.p95",
+        "eval.cost.mean",
+        "eval.cost.p95",
+        "eval.ending_inventory.mean",
+        "eval.ending_inventory.p95",
         "eval.total_cost.mean",
         "eval.total_cost.p95",
     ]

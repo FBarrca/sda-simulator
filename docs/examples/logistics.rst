@@ -269,8 +269,8 @@ deadline-aware candidates after tuning.
 9. Read The Metrics
 -------------------
 
-The simulation reports built-in ``step_cost`` and ``total_cost`` metrics plus
-logistics-specific metrics:
+The SimPy model records event-level ``cost`` and trajectory-level
+``total_cost`` metrics plus logistics-specific metrics:
 
 * ``on_time_rate``
 * ``priority_weighted_on_time_rate``

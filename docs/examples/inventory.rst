@@ -32,16 +32,16 @@ The example is split by responsibility:
 * ``examples/inventory/data.py`` defines the data module.
 * ``examples/inventory/policies.py`` defines policies.
 * ``examples/inventory/models.py`` defines the domain model.
-* ``examples/inventory/metrics.py`` defines domain-specific metrics.
+* ``examples/inventory/metrics.py`` lists the domain metric names emitted by
+  the model.
 * ``examples/inventory/main.py`` wires the example together.
 
 Data Module
 -----------
 
-``InventoryDataModule`` owns the scenario configuration and yields Poisson
-demand ``ScenarioBatch`` objects from ``batches(stage)``. Demand paths have
-shape ``[batch_size, horizon]`` and each scenario starts with one initial
-inventory value:
+``InventoryDataModule`` owns the scenario configuration and yields
+``ScenarioBatch`` objects from ``batches(stage)``. Each ``ScenarioSpec``
+contains one Poisson demand path and one initial inventory value:
 
 .. code-block:: python
 
@@ -67,17 +67,15 @@ reorder point, it orders enough to reach the target level:
 
    policy = OrderUpToPolicy(reorder_point=30, order_up_to=80)
 
-The policy operates on the full batch at once, returning one order quantity per
-scenario.
+The policy acts inside each SimPy scenario process, returning one order
+quantity for the current inventory state.
 
 Model
 -----
 
-``InventoryModel`` defines the domain dynamics:
-
-* ``transition`` computes available inventory, sales, and ending inventory.
-* ``cost`` combines order cost, holding cost, and lost-sales penalty.
-* ``info`` exposes intermediate values used by custom metrics.
+``InventoryModel`` registers a daily SimPy process in ``build``. Each day it
+asks the policy for an order, serves demand, updates inventory, logs cost, and
+emits domain metrics with the scenario recorder.
 
 .. code-block:: python
 
@@ -91,25 +89,17 @@ Model
 Metrics
 -------
 
-The example keeps the default cost metrics and adds inventory-specific metrics:
+The model emits inventory-specific metrics directly:
 
 .. code-block:: python
 
    from sda import evaluate
 
-   result = evaluate(
-       model,
-       data,
-       extra_metrics=[
-           InventoryMetric(),
-           StockoutMetric(),
-           FillRateMetric(),
-       ],
-   )
+   result = evaluate(model, data)
 
-``InventoryMetric`` logs ending inventory by period, ``StockoutMetric`` logs
-whether a scenario lost sales in a period, and ``FillRateMetric`` logs the
-share of demand served in each period.
+``inventory`` logs ending inventory by period, ``stockout`` logs whether a
+scenario lost sales in a period, and ``fill_rate`` logs the share of demand
+served in each period. ``total_cost`` is logged when the recorder closes.
 
 Interpreting Results
 --------------------

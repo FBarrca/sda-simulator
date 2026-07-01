@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="678" viewBox="0 0 1000 678" role="img">
+<style>
+
+    text { font-family: Arial, Helvetica, sans-serif; fill: #0f172a; }
+    .panel { fill: #ffffff; stroke: #d8dee9; stroke-width: 1.2; }
+    .title { font-size: 24px; font-weight: 700; }
+    .caption { font-size: 13px; fill: #475569; }
+    .section-title { font-size: 16px; font-weight: 700; }
+    .tick { font-size: 11px; fill: #64748b; text-anchor: end; }
+    .axis line, .axis { stroke: #94a3b8; stroke-width: 1.1; }
+    .grid { stroke: #e2e8f0; stroke-width: 1; }
+    
+    .bar-track { fill: #f1f5f9; }
+    .bar-rop.initial { fill: #94a3b8; }
+    .bar-excess.initial { fill: #cbd5e1; }
+    .bar-rop.published { fill: #1d4ed8; }
+    .bar-excess.published { fill: #93c5fd; }
+    .bar-caption { font-size: 11px; font-weight: 700; fill: #1e293b; }
+    .bar-value { font-size: 12px; fill: #334155; }
+    .node-label { font-size: 13px; font-weight: 700; }
+    .grid-v { stroke: #e2e8f0; stroke-width: 1; }
+    .legend rect { rx: 3; }
+    .legend text { font-size: 12px; fill: #475569; }
+    
+</style>
+
+    <rect class="panel" x="24" y="24" width="952" height="630" rx="16" />
+    <text x="48" y="60" class="title">Reorder-point and base-stock hyperparameters</text>
+    <text x="48" y="87.0" class="caption">Each pair compares the optimizer&#x27;s initial guess to the published lost-sales solution. Bar</text><text x="48" y="103.0" class="caption">length is the base stock (order-up-to) level; the dark segment is the reorder point.</text>
+    <line x1="208.0" y1="142" x2="208.0" y2="586.0" class="grid-v" /><text x="208.0" y="134" class="tick" text-anchor="middle">0</text><line x1="335.0" y1="142" x2="335.0" y2="586.0" class="grid-v" /><text x="335.0" y="134" class="tick" text-anchor="middle">750</text><line x1="462.0" y1="142" x2="462.0" y2="586.0" class="grid-v" /><text x="462.0" y="134" class="tick" text-anchor="middle">1500</text><line x1="589.0" y1="142" x2="589.0" y2="586.0" class="grid-v" /><text x="589.0" y="134" class="tick" text-anchor="middle">2250</text><line x1="716.0" y1="142" x2="716.0" y2="586.0" class="grid-v" /><text x="716.0" y="134" class="tick" text-anchor="middle">3000</text>
+    <rect x="208" y="152" width="508" height="24" class="bar-track" /><rect x="208" y="152" width="169.3" height="24" class="bar-rop initial" /><rect x="377.3" y="152" width="338.7" height="24" class="bar-excess initial" /><text x="216" y="168.0" class="bar-caption">Initial guess</text><text x="728" y="168.0" class="bar-value">ROP 1000 &#8594; stock 3000</text><rect x="208" y="186" width="508" height="24" class="bar-track" /><rect x="208" y="186" width="123.5" height="24" class="bar-rop published" /><rect x="331.5" y="186" width="302.5" height="24" class="bar-excess published" /><text x="216" y="202.0" class="bar-caption">Published</text><text x="728" y="202.0" class="bar-value">ROP 729 &#8594; stock 2516</text><text x="192" y="185.0" class="node-label" text-anchor="end">Node 1</text><rect x="208" y="242" width="508" height="24" class="bar-track" /><rect x="208" y="242" width="42.3" height="24" class="bar-rop initial" /><rect x="250.3" y="242" width="59.3" height="24" class="bar-excess initial" /><text x="216" y="258.0" class="bar-caption">Initial guess</text><text x="728" y="258.0" class="bar-value">ROP 250 &#8594; stock 600</text><rect x="208" y="276" width="508" height="24" class="bar-track" /><rect x="208" y="276" width="46.8" height="24" class="bar-rop published" /><rect x="254.8" y="276" width="62.1" height="24" class="bar-excess published" /><text x="216" y="292.0" class="bar-caption">Published</text><text x="728" y="292.0" class="bar-value">ROP 276 &#8594; stock 643</text><text x="192" y="275.0" class="node-label" text-anchor="end">Node 2</text><rect x="208" y="332" width="508" height="24" class="bar-track" /><rect x="208" y="332" width="33.9" height="24" class="bar-rop initial" /><rect x="241.9" y="332" width="118.5" height="24" class="bar-excess initial" /><text x="216" y="348.0" class="bar-caption">Initial guess</text><text x="728" y="348.0" class="bar-value">ROP 200 &#8594; stock 900</text><rect x="208" y="366" width="508" height="24" class="bar-track" /><rect x="208" y="366" width="33.5" height="24" class="bar-rop published" /><rect x="241.5" y="366" width="125.1" height="24" class="bar-excess published" /><text x="216" y="382.0" class="bar-caption">Published</text><text x="728" y="382.0" class="bar-value">ROP 198 &#8594; stock 937</text><text x="192" y="365.0" class="node-label" text-anchor="end">Node 3</text><rect x="208" y="422" width="508" height="24" class="bar-track" /><rect x="208" y="422" width="25.4" height="24" class="bar-rop initial" /><rect x="233.4" y="422" width="25.4" height="24" class="bar-excess initial" /><text x="216" y="438.0" class="bar-caption">Initial guess</text><text x="728" y="438.0" class="bar-value">ROP 150 &#8594; stock 300</text><rect x="208" y="456" width="508" height="24" class="bar-track" /><rect x="208" y="456" width="26.9" height="24" class="bar-rop published" /><rect x="234.9" y="456" width="25.3" height="24" class="bar-excess published" /><text x="216" y="472.0" class="bar-caption">Published</text><text x="728" y="472.0" class="bar-value">ROP 159 &#8594; stock 308</text><text x="192" y="455.0" class="node-label" text-anchor="end">Node 4</text><rect x="208" y="512" width="508" height="24" class="bar-track" /><rect x="208" y="512" width="33.9" height="24" class="bar-rop initial" /><rect x="241.9" y="512" width="67.7" height="24" class="bar-excess initial" /><text x="216" y="528.0" class="bar-caption">Initial guess</text><text x="728" y="528.0" class="bar-value">ROP 200 &#8594; stock 600</text><rect x="208" y="546" width="508" height="24" class="bar-track" /><rect x="208" y="546" width="37.2" height="24" class="bar-rop published" /><rect x="245.2" y="546" width="68.5" height="24" class="bar-excess published" /><text x="216" y="562.0" class="bar-caption">Published</text><text x="728" y="562.0" class="bar-value">ROP 220 &#8594; stock 625</text><text x="192" y="545.0" class="node-label" text-anchor="end">Node 5</text>
+    <g class="legend" transform="translate(208,614.0)">
+      <rect width="14" height="14" class="bar-rop initial" />
+      <text x="20" y="12">Initial reorder point</text>
+      <rect x="240" width="14" height="14" class="bar-excess initial" />
+      <text x="260" y="12">Initial order-up-to buffer</text>
+      <rect x="0" y="24" width="14" height="14" class="bar-rop published" />
+      <text x="20" y="36">Published reorder point</text>
+      <rect x="240" y="24" width="14" height="14" class="bar-excess published" />
+      <text x="260" y="36">Published order-up-to buffer</text>
+    </g>
+    
+</svg>

@@ -1,8 +1,6 @@
 from __future__ import annotations
 
-import numpy as np
-
-from sda import Policy, StepRecord
+from sda import EventRecord, Policy
 
 
 class OrderUpToPolicy(Policy):
@@ -14,10 +12,9 @@ class OrderUpToPolicy(Policy):
         self.reorder_point = float(reorder_point)
         self.order_up_to = float(order_up_to)
 
-    def act(self, state, t: int, history: list[StepRecord]):
-        inventory = np.asarray(state, dtype=float)
-        return np.where(
-            inventory < self.reorder_point,
-            np.maximum(self.order_up_to - inventory, 0.0),
-            0.0,
-        )
+    def act(self, state, env, history: list[EventRecord]):
+        """Return the replenishment quantity for the current inventory."""
+        del env, history
+        if state.inventory < self.reorder_point:
+            return max(self.order_up_to - state.inventory, 0.0)
+        return 0.0

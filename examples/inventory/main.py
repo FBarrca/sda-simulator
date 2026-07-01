@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from examples.inventory.data import InventoryDataModule
-from examples.inventory.metrics import FillRateMetric, InventoryMetric, StockoutMetric
 from examples.inventory.models import InventoryModel
 from examples.inventory.policies import OrderUpToPolicy
 from sda import evaluate
@@ -23,15 +22,7 @@ def build_result():
         holding_cost=0.1,
         stockout_cost=8.0,
     )
-    return evaluate(
-        model,
-        data,
-        extra_metrics=[
-            InventoryMetric(),
-            StockoutMetric(),
-            FillRateMetric(),
-        ],
-    )
+    return evaluate(model, data)
 
 
 def main() -> None:

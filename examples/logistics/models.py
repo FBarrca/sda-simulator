@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from math import ceil
-from typing import Any
 
 import numpy as np
+import simpy
 
 from examples.logistics.domain import (
     Assignment,
@@ -21,7 +21,14 @@ from examples.logistics.network import (
     WAREHOUSE_INDEX,
     distance_km,
 )
-from sda import Policy, SDAModel, ScenarioBatch
+from sda import Policy, Recorder, SDAModel, ScenarioSpec
+
+
+@dataclass
+class LogisticsSimulationState:
+    """Mutable holder for one SimPy logistics scenario."""
+
+    current: LogisticsState
 
 
 class LogisticsModel(SDAModel):
@@ -43,72 +50,47 @@ class LogisticsModel(SDAModel):
         self.late_cost_per_priority_unit_day = float(late_cost_per_priority_unit_day)
         self.backlog_cost_per_priority_day = float(backlog_cost_per_priority_day)
         self.invalid_assignment_cost = float(invalid_assignment_cost)
-        self._last_cost: np.ndarray | None = None
-        self._last_info: dict[str, np.ndarray] | None = None
         bind_rollout_model = getattr(policy, "bind_rollout_model", None)
         if callable(bind_rollout_model):
             bind_rollout_model(self)
 
-    def initial_state(self, batch: ScenarioBatch) -> list[LogisticsState]:
-        return [clone_state(state) for state in batch.initial_state]
-
-    def transition(
+    def build(
         self,
-        state,
-        decision,
-        exogenous: dict[str, Any],
-        t: int,
-    ) -> list[LogisticsState]:
-        states = _state_list(state)
-        decisions = _decision_list(decision, len(states))
-        orders_by_scenario = np.asarray(exogenous["orders"], dtype=object)
-        traffic = np.asarray(exogenous["traffic_multiplier"], dtype=float)
-        outages = np.asarray(exogenous["vehicle_outages"], dtype=bool)
+        env: simpy.Environment,
+        scenario: ScenarioSpec,
+        recorder: Recorder,
+    ) -> LogisticsSimulationState:
+        """Register daily logistics dispatch processes for one scenario."""
+        state = LogisticsSimulationState(current=clone_state(scenario.initial_state))
+        env.process(self._run(env, scenario, recorder, state))
+        return state
 
-        next_states: list[LogisticsState] = []
-        info_rows: dict[str, list[float]] = {
-            "dispatch_cost": [],
-            "late_cost": [],
-            "pending_backlog": [],
-            "dispatched_order_count": [],
-            "on_time_rate": [],
-            "priority_weighted_on_time_rate": [],
-            "vehicle_utilization": [],
-            "invalid_assignment_count": [],
-            "new_order_count": [],
-        }
-        costs: list[float] = []
+    def _run(
+        self,
+        env: simpy.Environment,
+        scenario: ScenarioSpec,
+        recorder: Recorder,
+        state: LogisticsSimulationState,
+    ):
+        orders_path = np.asarray(scenario.data["orders"], dtype=object)
+        traffic_path = np.asarray(scenario.data["traffic_multiplier"], dtype=float)
+        outages_path = np.asarray(scenario.data["vehicle_outages"], dtype=bool)
 
-        for index, current_state in enumerate(states):
+        for index, new_orders in enumerate(orders_path):
+            assignments = self.policy.act(state.current, env, recorder.history)
             next_state, info, cost = self._transition_one(
-                state=current_state,
-                assignments=decisions[index],
-                new_orders=tuple(orders_by_scenario[index]),
-                traffic=traffic[index],
-                outages=outages[index],
-                t=t,
+                state=state.current,
+                assignments=tuple(assignments),
+                new_orders=tuple(new_orders),
+                traffic=traffic_path[index],
+                outages=outages_path[index],
+                t=state.current.time,
             )
-            next_states.append(next_state)
-            costs.append(cost)
-            for name, values in info_rows.items():
-                values.append(float(info[name]))
-
-        self._last_cost = np.asarray(costs, dtype=float)
-        self._last_info = {
-            name: np.asarray(values, dtype=float)
-            for name, values in info_rows.items()
-        }
-        return next_states
-
-    def cost(self, state, decision, exogenous, next_state, t: int):
-        if self._last_cost is None:
-            raise RuntimeError("transition must run before cost")
-        return self._last_cost
-
-    def info(self, state, decision, exogenous, next_state, cost, t: int):
-        if self._last_info is None:
-            raise RuntimeError("transition must run before info")
-        return self._last_info
+            state.current = next_state
+            recorder.cost(cost)
+            for name, value in info.items():
+                recorder.log(name, value)
+            yield env.timeout(1.0)
 
     def _transition_one(
         self,
@@ -255,31 +237,6 @@ class LogisticsModel(SDAModel):
             day_of_week=(state.day_of_week + 1) % 7,
         )
         return next_state, info, total_cost
-
-
-def _state_list(state) -> list[LogisticsState]:
-    if isinstance(state, LogisticsState):
-        return [state]
-    return list(state)
-
-
-def _decision_list(decision, batch_size: int) -> list[tuple[Assignment, ...]]:
-    if batch_size == 1 and _is_assignment_iterable(decision):
-        return [tuple(decision)]
-    decisions = list(decision)
-    if len(decisions) != batch_size:
-        raise ValueError(f"decision has {len(decisions)} scenarios, expected {batch_size}")
-    return [tuple(items) for items in decisions]
-
-
-def _is_assignment_iterable(value) -> bool:
-    if isinstance(value, Assignment):
-        return False
-    try:
-        items = list(value)
-    except TypeError:
-        return False
-    return all(isinstance(item, Assignment) for item in items)
 
 
 def _advance_vehicle(vehicle: VehicleState) -> VehicleState:

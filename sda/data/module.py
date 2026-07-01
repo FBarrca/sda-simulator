@@ -6,11 +6,12 @@ from sda.core import ScenarioBatch
 
 
 class DataModule:
-    """Lightning-style container for scenario data setup and batching.
+    """Lightning-style container for SimPy scenario setup and batching.
 
     Subclass ``DataModule`` when scenario construction has state, setup, or
     reusable configuration. Implement :meth:`batches` to yield
-    :class:`ScenarioBatch` objects for the requested stage.
+    :class:`ScenarioBatch` objects containing ``ScenarioSpec`` items for the
+    requested stage.
     """
 
     def prepare_data(self) -> None:

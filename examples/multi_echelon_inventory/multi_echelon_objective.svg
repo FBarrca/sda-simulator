@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="968" height="610" viewBox="0 0 968 610" role="img">
+<style>
+
+    text { font-family: Arial, Helvetica, sans-serif; fill: #0f172a; }
+    .panel { fill: #ffffff; stroke: #d8dee9; stroke-width: 1.2; }
+    .title { font-size: 24px; font-weight: 700; }
+    .caption { font-size: 13px; fill: #475569; }
+    .section-title { font-size: 16px; font-weight: 700; }
+    .tick { font-size: 11px; fill: #64748b; text-anchor: end; }
+    .axis line, .axis { stroke: #94a3b8; stroke-width: 1.1; }
+    .grid { stroke: #e2e8f0; stroke-width: 1; }
+    
+    .value { font-size: 13px; font-weight: 700; text-anchor: middle; }
+    .axis-label { font-size: 11px; fill: #475569; text-anchor: middle; }
+    .callout-title { font-size: 17px; font-weight: 700; }
+    .callout text { font-size: 14px; fill: #334155; }
+    .bar-bg { fill: #e2e8f0; rx: 4; }
+    .lost-bar { fill: #2563eb; rx: 4; }
+    .back-bar { fill: #16a34a; rx: 4; }
+    .target-line { stroke: #0f172a; stroke-width: 2; }
+    .node-label { font-size: 12px; font-weight: 700; }
+    .metric-label { font-size: 12px; fill: #475569; }
+    
+</style>
+
+    <rect class="panel" x="24" y="24" width="920" height="562" rx="16" />
+    <text x="48" y="64" class="title">Objective and service-level scorecard</text>
+    <text x="48" y="91" class="caption">
+      Objective = average on-hand inventory + 1e6 x service shortfall. Published vectors reduce inventory while meeting targets.
+    </text>
+    <g class="axis">
+      <line x1="72" y1="350" x2="568" y2="350" />
+      <line x1="72" y1="112" x2="72" y2="350" />
+      <text x="60" y="122" class="tick">2783</text>
+      <text x="60" y="350" class="tick">0</text>
+    </g>
+    <rect x="72.0" y="112.0" width="58" height="238.0" rx="5" fill="#64748b" /><text x="101.0" y="102.0" class="value">2783</text><text x="101.0" y="374" class="axis-label">Lost initial</text><rect x="172.0" y="113.4" width="58" height="236.6" rx="5" fill="#94a3b8" /><text x="201.0" y="103.4" class="value">2768</text><text x="201.0" y="374" class="axis-label">Backorder initial</text><rect x="272.0" y="140.9" width="58" height="209.1" rx="5" fill="#2563eb" /><text x="301.0" y="130.9" class="value">2446</text><text x="301.0" y="374" class="axis-label">Lost published</text><rect x="372.0" y="134.9" width="58" height="215.1" rx="5" fill="#16a34a" /><text x="401.0" y="124.9" class="value">2516</text><text x="401.0" y="374" class="axis-label">Backorder published</text>
+    <g class="callout" transform="translate(620,122)">
+      <text x="0" y="0" class="callout-title">Value from optimization</text>
+      <text x="0" y="34">Lost sales: 12.1% less average inventory</text>
+      <text x="0" y="62">Backorder: 9.1% less average inventory</text>
+      <text x="0" y="90">Service penalty: 0 in both published runs</text>
+      <text x="0" y="118">20 seeded replications, horizon 360</text>
+    </g>
+    <g transform="translate(72,422)">
+      <text x="0" y="0" class="section-title">
+        Published solution service levels (black tick = 95% target)
+      </text>
+      <text x="0" y="39" class="node-label">Node 1</text><rect x="84" y="28" width="180" height="10" class="bar-bg" /><rect x="84" y="28" width="171.3" height="10" class="lost-bar" /><line x1="255.0" y1="24" x2="255.0" y2="42" class="target-line" /><text x="276" y="39" class="metric-label">lost 95.2%</text><rect x="400" y="28" width="180" height="10" class="bar-bg" /><rect x="400" y="28" width="171.2" height="10" class="back-bar" /><line x1="571.0" y1="24" x2="571.0" y2="42" class="target-line" /><text x="592" y="39" class="metric-label">backorder 95.1%</text><text x="0" y="67" class="node-label">Node 2</text><rect x="84" y="56" width="180" height="10" class="bar-bg" /><rect x="84" y="56" width="179.9" height="10" class="lost-bar" /><line x1="255.0" y1="52" x2="255.0" y2="70" class="target-line" /><text x="276" y="67" class="metric-label">lost 100.0%</text><rect x="400" y="56" width="180" height="10" class="bar-bg" /><rect x="400" y="56" width="179.1" height="10" class="back-bar" /><line x1="571.0" y1="52" x2="571.0" y2="70" class="target-line" /><text x="592" y="67" class="metric-label">backorder 99.5%</text><text x="0" y="95" class="node-label">Node 4</text><rect x="84" y="84" width="180" height="10" class="bar-bg" /><rect x="84" y="84" width="179.8" height="10" class="lost-bar" /><line x1="255.0" y1="80" x2="255.0" y2="98" class="target-line" /><text x="276" y="95" class="metric-label">lost 99.9%</text><rect x="400" y="84" width="180" height="10" class="bar-bg" /><rect x="400" y="84" width="179.5" height="10" class="back-bar" /><line x1="571.0" y1="80" x2="571.0" y2="98" class="target-line" /><text x="592" y="95" class="metric-label">backorder 99.7%</text><text x="0" y="123" class="node-label">Node 5</text><rect x="84" y="112" width="180" height="10" class="bar-bg" /><rect x="84" y="112" width="173.4" height="10" class="lost-bar" /><line x1="255.0" y1="108" x2="255.0" y2="126" class="target-line" /><text x="276" y="123" class="metric-label">lost 96.3%</text><rect x="400" y="112" width="180" height="10" class="bar-bg" /><rect x="400" y="112" width="171.2" height="10" class="back-bar" /><line x1="571.0" y1="108" x2="571.0" y2="126" class="target-line" /><text x="592" y="123" class="metric-label">backorder 95.1%</text>
+    </g>
+    
+</svg>

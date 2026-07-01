@@ -1,30 +1,14 @@
 from __future__ import annotations
 
 from examples.logistics.data import LogisticsDataModule
-from examples.logistics.metrics import (
-    DispatchCostMetric,
-    DispatchedOrderMetric,
-    LateCostMetric,
-    OnTimeRateMetric,
-    PendingBacklogMetric,
-    PriorityWeightedOnTimeMetric,
-    VehicleUtilizationMetric,
-)
+from examples.logistics.metrics import LOGISTICS_METRICS
 from examples.logistics.models import LogisticsModel
 from examples.logistics.policies import PriorityPolicy
 from sda import SimulationResult, evaluate
 
 
 def logistics_metrics():
-    return [
-        OnTimeRateMetric(),
-        PriorityWeightedOnTimeMetric(),
-        LateCostMetric(),
-        DispatchCostMetric(),
-        PendingBacklogMetric(),
-        DispatchedOrderMetric(),
-        VehicleUtilizationMetric(),
-    ]
+    return list(LOGISTICS_METRICS)
 
 
 def build_result(
@@ -42,7 +26,7 @@ def build_result(
         seed=seed,
     )
     model = LogisticsModel(policy=policy or PriorityPolicy())
-    return evaluate(model, data, extra_metrics=logistics_metrics())
+    return evaluate(model, data)
 
 
 def main() -> None:

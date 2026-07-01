@@ -15,7 +15,7 @@ from examples.logistics.network import (
     WAREHOUSE_INDEX,
     WAREHOUSES,
 )
-from sda import DataModule, ScenarioBatch
+from sda import DataModule, ScenarioBatch, ScenarioSpec
 
 DEMAND_BY_DAY = np.asarray([1.0, 1.05, 1.2, 1.1, 1.0, 0.55, 0.4], dtype=float)
 MONTHLY_SEASONALITY = np.asarray(
@@ -188,15 +188,22 @@ class LogisticsDataModule(DataModule):
                     history_day_index[batch_index, t] = source_day
 
             yield ScenarioBatch(
-                initial_state=[initial_logistics_state() for _ in range(size)],
-                exogenous={
-                    "orders": orders,
-                    "traffic_multiplier": traffic,
-                    "vehicle_outages": outages,
-                    "event_labels": event_labels,
-                    "history_day_index": history_day_index,
-                },
-                scenario_ids=list(range(start, stop)),
+                [
+                    ScenarioSpec(
+                        scenario_id=scenario_id,
+                        end_time=float(self.horizon),
+                        initial_state=initial_logistics_state(),
+                        data={
+                            "orders": orders[batch_index],
+                            "traffic_multiplier": traffic[batch_index],
+                            "vehicle_outages": outages[batch_index],
+                            "event_labels": event_labels[batch_index],
+                            "history_day_index": history_day_index[batch_index],
+                        },
+                        seed=scenario_id,
+                    )
+                    for batch_index, scenario_id in enumerate(range(start, stop))
+                ]
             )
 
     def _sample_days(self, rng: np.random.Generator) -> list[int]:
