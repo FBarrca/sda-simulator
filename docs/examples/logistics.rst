@@ -115,8 +115,8 @@ The synthetic demand includes:
 6. Build Bootstrap Scenarios
 ----------------------------
 
-``LogisticsScenarioLoader`` samples contiguous 7-day blocks from synthetic
-history. Each batch contains:
+``LogisticsDataModule`` samples contiguous 7-day blocks from synthetic history.
+Each batch contains:
 
 * ``orders`` with shape ``[batch_size, horizon]`` as tuples of ``Order`` records,
 * ``traffic_multiplier`` with shape ``[batch_size, horizon, warehouse, customer]``,
@@ -129,7 +129,7 @@ revealed. To respect that order, new same-day orders are appended to
 
 .. code-block:: python
 
-   scenarios = LogisticsScenarioLoader(
+   data = LogisticsDataModule(
        horizon=28,
        n_scenarios=500,
        batch_size=64,
@@ -284,15 +284,15 @@ Use the total-cost distribution for risk-sensitive comparisons:
 
 .. code-block:: python
 
-   result.metric("total_cost").mean()
-   result.metric("total_cost").percentile(95)
-   result.metric("total_cost").cvar(0.95)
+   result["total_cost"].mean()
+   result["total_cost"].percentile(95)
+   result["total_cost"].cvar(0.95)
 
 Use step-level metrics for trajectory views:
 
 .. code-block:: python
 
-   scenario_ids, times, backlog = result.metric("pending_backlog").to_trajectory_matrix()
+   scenario_ids, times, backlog = result["pending_backlog"].to_trajectory_matrix()
 
 The important tradeoff is not only average cost. A useful dispatch policy
 should also keep high-priority service high, control backlog growth, and reduce

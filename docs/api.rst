@@ -1,25 +1,23 @@
 API Reference
 =============
 
-The public package API is re-exported from ``sda``. The sections below document
-the modules that define scenario data, model contracts, simulation execution,
-and metrics.
+The public package API is re-exported from ``sda``. New code can usually import
+from ``sda`` directly.
 
-Data
+Core
 ----
 
-Use ``sda.data`` when preparing exogenous futures. ``ArrayScenarioLoader`` is
-the built-in loader for NumPy-compatible arrays. ``BootstrapScenarioLoader``
-and its IID, stationary, circular-block, and moving-block variants generate
-futures from historical observations. Custom loaders can implement
-``ScenarioLoader`` and yield ``ScenarioBatch`` objects.
-
-.. automodule:: sda.data
+.. automodule:: sda.core
    :members:
    :undoc-members:
    :show-inheritance:
 
-.. automodule:: sda.data.core
+Data
+----
+
+Use ``sda.data`` for ``DataModule`` and concrete data modules.
+
+.. automodule:: sda.data
    :members:
    :undoc-members:
    :show-inheritance:
@@ -29,29 +27,23 @@ futures from historical observations. Custom loaders can implement
    :undoc-members:
    :show-inheritance:
 
+.. automodule:: sda.data.generator
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 .. automodule:: sda.data.bootstrap
    :members:
    :undoc-members:
    :show-inheritance:
 
-Model
------
-
-Use ``sda.model`` to define policies and domain dynamics. A ``Policy`` chooses
-decisions, while an ``SDAModel`` owns transition, cost, and optional info
-hooks. ``StepRecord`` and ``TrajectoryRecord`` are the records metrics receive
-during simulation.
-
-.. automodule:: sda.model
+.. automodule:: sda.data.module
    :members:
    :undoc-members:
    :show-inheritance:
 
 Simulation
 ----------
-
-Use ``sda.simulation`` to evaluate a model on scenarios. ``Simulator`` runs the
-rollout loop and returns a ``SimulationResult`` for metric queries.
 
 .. automodule:: sda.simulation
    :members:
@@ -61,11 +53,15 @@ rollout loop and returns a ``SimulationResult`` for metric queries.
 Metrics
 -------
 
-Use ``sda.metrics`` to log and query observations. The built-in metrics record
-step cost and total trajectory cost; custom metrics can log any scalar or
-per-scenario vector exposed by a step or trajectory record.
-
 .. automodule:: sda.metrics
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+Tracking
+--------
+
+.. automodule:: sda.tracking
    :members:
    :undoc-members:
    :show-inheritance:

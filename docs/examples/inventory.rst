@@ -29,22 +29,23 @@ Source Layout
 
 The example is split by responsibility:
 
-* ``examples/inventory/dataloader.py`` defines scenario generation.
+* ``examples/inventory/data.py`` defines the data module.
 * ``examples/inventory/policies.py`` defines policies.
 * ``examples/inventory/models.py`` defines the domain model.
 * ``examples/inventory/metrics.py`` defines domain-specific metrics.
 * ``examples/inventory/main.py`` wires the example together.
 
-Scenario Loader
----------------
+Data Module
+-----------
 
-``InventoryScenarioLoader`` is a custom ``ScenarioLoader``. It generates
-Poisson demand paths with shape ``[batch_size, horizon]`` and returns
-``ScenarioBatch`` objects with one initial inventory value per scenario:
+``InventoryDataModule`` owns the scenario configuration and yields Poisson
+demand ``ScenarioBatch`` objects from ``batches(stage)``. Demand paths have
+shape ``[batch_size, horizon]`` and each scenario starts with one initial
+inventory value:
 
 .. code-block:: python
 
-   scenarios = InventoryScenarioLoader(
+   data = InventoryDataModule(
        horizon=12,
        n_scenarios=1000,
        batch_size=128,
@@ -90,18 +91,20 @@ Model
 Metrics
 -------
 
-The example combines built-in cost metrics with inventory-specific metrics:
+The example keeps the default cost metrics and adds inventory-specific metrics:
 
 .. code-block:: python
 
-   simulator = Simulator(
-       metrics=[
-           StepCostMetric(),
-           TotalCostMetric(),
+   from sda import evaluate
+
+   result = evaluate(
+       model,
+       data,
+       extra_metrics=[
            InventoryMetric(),
            StockoutMetric(),
            FillRateMetric(),
-       ]
+       ],
    )
 
 ``InventoryMetric`` logs ending inventory by period, ``StockoutMetric`` logs

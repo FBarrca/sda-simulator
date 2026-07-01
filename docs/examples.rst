@@ -7,6 +7,10 @@ learning and testing, but they are not installed as part of the library package.
 Run example commands from the repository root so both ``sda`` and
 ``examples`` are importable.
 
+If you are deciding whether your own problem fits ``sda``, read
+:doc:`use_cases` first. The pages below then show two concrete source-tree
+applications.
+
 .. toctree::
    :maxdepth: 2
 
