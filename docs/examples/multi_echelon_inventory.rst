@@ -38,10 +38,10 @@ worth carrying.
 Underneath the network, the same four things happen every simulated day at
 every stocking location:
 
-1. **Check stock and decide whether to reorder.** If a location's available
-   stock (what is on the shelf plus what is already on its way) has dropped
-   to its trigger level, it places a replenishment order with the location
-   upstream.
+1. **Check inventory position and decide whether to reorder.** If a
+   location's inventory position (what is on the shelf plus what is already
+   on its way) has dropped to its trigger level, it places a replenishment
+   order with the location upstream.
 2. **The upstream location prepares that order.** It sets aside the
    quantity requested, drawing from its own stock.
 3. **The order travels for its lead time.** Delivery is not instant, and
@@ -57,67 +57,155 @@ None of this is guesswork layered on top of a spreadsheet: it is the same
 sequence of events that would happen in the real network, replayed with
 real historical data, one simulated day at a time.
 
-3. The Policy We're Tuning: One Simple Rule
+3. The Policy We're Tuning: A PFA
+-------------------------------------
+
+Every stocking location is controlled by the same deliberately small
+decision rule. In sequential decision analytics this is a **policy function
+approximation**, or **PFA**: a readable function that maps the state we can
+observe today to the action we take today. Here the state is the facility's
+inventory position and on-hand stock; the action is how much to order from
+the upstream facility.
+
+The PFA has two business-readable hyperparameters for each stocking node:
+
+* **Trigger level** / **reorder point** (``R``): when inventory position is
+  low enough, start a replenishment order.
+* **Target level** / **base stock** (``B``): the level the facility is
+  trying to refill toward.
+
+The policy function is intentionally this simple:
+
+.. code-block:: python
+
+   def order_quantity(on_hand, inventory_position, trigger, target, *, tolerance=1.05):
+       if inventory_position <= tolerance * trigger:
+           return target - on_hand
+       return 0.0
+
+The trigger test uses **inventory position**, not just physical stock on the
+shelf. Inventory position includes stock that is already on its way, so the
+policy does not panic-order simply because a shipment is in transit. The
+``1.05`` tolerance is carried over from the reference implementation to make
+the reorder comparison robust around the trigger. Conceptually, though, the
+two numbers the business owns are still the trigger ``R`` and target ``B``.
+
+Across the five stocking locations, the policy therefore has ten
+hyperparameters: ``R1`` through ``R5`` and ``B1`` through ``B5``. The source
+node is treated as unconstrained, so it is not part of the tuning problem.
+
+4. Releasing Capital: Optimize The PFA Levels
 ------------------------------------------------
 
-Every stocking location is run by the exact same rule, and it is
-deliberately simple: **when a location's available stock drops to its
-trigger level, order enough to bring it back up to its target level.**
-That is the entire decision logic -- no forecast, no black-box model
-guessing differently each time it runs. In decision-science terms this kind
-of fixed, explainable rule is called a **policy function approximation**;
-what matters for the business is that it is a rule an operations team can
-read, trust, and audit, not a model whose reasoning has to be taken on
-faith.
+Once the policy is explicit, the improvement question becomes concrete:
+**can we release working capital from inventory without worsening the
+customer experience?** In this example, that means optimizing the ten PFA
+hyperparameters across the whole network and across all simulated
+historical replications.
 
-The rule becomes specific to each location through two numbers: its
-**trigger level** (the reorder point) and its **target level** (the base
-stock). Across the five stocking locations, that is ten numbers in total,
-and those ten numbers are the *only* thing being tuned in this example.
+The optimizer does not tune each location in isolation. A lower target at
+the regional node can starve customer nodes downstream; a higher trigger at
+a customer node can protect fill rate but tie up more local stock. The
+right answer is the joint set of levels that minimizes the reference
+objective:
+
+.. code-block:: text
+
+   objective = average on-hand inventory
+             + 1.0e6 * total service-level shortfall
+
+The large penalty makes the intent plain: first protect service, then drive
+inventory down. The reference optimizer vector stores each node as
+``excess above trigger`` plus ``trigger``:
+
+.. code-block:: text
+
+   x = [e1, e2, e3, e4, e5, R1, R2, R3, R4, R5]
+   B_i = e_i + R_i
+
+So the search is still choosing the two levels we care about: trigger
+``R_i`` and target ``B_i`` for every stocking node.
 
 .. image:: ../../examples/multi_echelon_inventory/multi_echelon_policy_parameters.svg
-   :alt: Bar chart comparing initial-guess and published reorder-point and base-stock hyperparameters per node
+   :alt: Bar chart comparing initial-guess and optimized reorder-point and base-stock hyperparameters per node
 
-We tune these ten numbers for one reason: **to unlock capital that is
-sitting idle as excess stock on the shelf, without letting customer service
-drop.** Every unit held above what a location truly needs is cash the
-business cannot use anywhere else; every unit missing is a customer left
-unserved. Getting these ten numbers right is the single lever available
-here, and the chart above shows exactly how far each location's buffer
-moved once that lever was pulled.
+The default lost-sales optimized policy does not simply cut every buffer.
+It mostly releases stock from the regional stocking point while keeping, or
+slightly increasing, selected downstream protection:
 
-4. Testing Changes Safely, With Real History
---------------------------------------------------
+.. list-table::
+   :header-rows: 1
 
-Trying a new set of ten numbers directly on the real supply chain is
-risky: a bad guess means real stockouts, or real cash tied up, and you
-would not know it was wrong for weeks. Instead, this example runs the same
-network inside a computer model and replays real historical demand and
-delivery data against it -- the same kind of order and delivery-delay
-history a company already holds in its own systems, not an invented average
-or a textbook probability curve. That means a proposed set of ten numbers
-can be rehearsed against real, messy conditions -- including the actual
-delivery delays and demand swings that occurred historically -- as many
-times as needed, in minutes, before anything is decided for real.
+   * - Node
+     - Trigger change
+     - Target change
+     - Interpretation
+   * - 1
+     - ``1000 -> 729``
+     - ``3000 -> 2516``
+     - Large release from the regional buffer.
+   * - 2
+     - ``250 -> 276``
+     - ``600 -> 643``
+     - Slightly more protection near customer demand.
+   * - 3
+     - ``200 -> 198``
+     - ``900 -> 937``
+     - Similar trigger, a little more transshipment buffer.
+   * - 4
+     - ``150 -> 159``
+     - ``300 -> 308``
+     - Small downstream protection increase.
+   * - 5
+     - ``200 -> 220``
+     - ``600 -> 625``
+     - Small downstream protection increase.
+
+That is the business story the chart is meant to make visible: optimization
+is not "hold less everywhere." It is "put the buffer where the network
+actually needs it, and release the rest."
+
+5. Simulating The Policy On Historical Data
+------------------------------------------------
+
+Trying a new set of levels directly on the real supply chain is risky: a
+bad guess means real stockouts, or real cash tied up, and you would not
+know it was wrong for weeks. Instead, this example runs the same network
+inside a computer model and replays real historical demand and delivery
+data against it. The demand values and lead-time delays come from the CSV
+history bundled with the reference problem; each seeded replication
+bootstraps from those histories to create another plausible year.
 
 .. image:: ../../examples/multi_echelon_inventory/multi_echelon_inventory_trace.svg
-   :alt: Daily inventory trace for the network total and node 2, with node 2's reorder point and base stock drawn as reference lines
+   :alt: Daily policy traces for nodes 1 through 5 with a side topology map showing where each node sits in the network
 
-The thick green line above is one location's stock on hand over time; the
-dashed lines are its own trigger and target levels. You can watch the rule
-at work day by day: stock drifts down as demand is served, touches the
-trigger, a resupply order fires, and the line climbs back up once that
-shipment's real lead time has passed.
+The trace now follows all five stocking nodes. Each row uses its own
+y-scale because the regional buffer is much larger than the customer-facing
+buffers; putting them on one shared axis would hide the downstream
+behavior. Within each row, the green line is **inventory position**, the
+signal the policy watches, and the blue line is **on-hand inventory**, the
+stock customers or downstream nodes can actually draw from today. The
+topology inset on the right maps those node numbers back to the supply
+network, so the reader can see which rows are upstream buffers and which
+rows are customer-facing locations.
 
-5. Did It Work?
+The dashed lines show that node's trigger and target levels, and the
+triangles mark inferred reorder days. Reading across rows shows how the
+same PFA behaves differently by echelon: upstream nodes carry larger
+buffers and replenish downstream facilities, while customer-facing nodes
+cycle around smaller local targets. That is more useful than a simple
+"current inventory" plot because it shows both sides of the tradeoff:
+whether each node orders early enough to protect service, and whether it is
+holding more stock than the tuned PFA actually needs.
+
+6. Did It Work?
 ------------------
 
-Two outcomes matter here, and only one of them can be traded off against
-the other, in fact, not in theory: how much stock the network holds, and
-whether every customer-facing location keeps its promised fill rate.
-Missing that promise counts far more heavily than any inventory saved, so a
-good set of ten numbers has to protect service first, and only then
-compete on how little stock it needs to do it.
+Two outcomes matter here: how much stock the network holds, and whether
+every customer-facing location keeps its promised fill rate. Missing that
+promise counts far more heavily than any inventory saved, so a good set of
+ten numbers has to protect service first, and only then compete on how
+little stock it needs to do it.
 
 .. list-table::
    :header-rows: 1
@@ -141,7 +229,7 @@ compete on how little stock it needs to do it.
 The tuned numbers hold 9-12% less average stock across the network and
 still clear every service target -- nothing was traded away to get there.
 
-6. What This Is Worth In Dollars
+7. What This Is Worth In Dollars
 ------------------------------------
 
 Turning that reduction into money only needs two extra numbers for your own
@@ -168,12 +256,12 @@ and obsolescence are all counted).
 Those two assumptions are illustrative, for a single product on this
 six-node network -- substitute your own unit cost and holding-cost rate.
 The number that carries over unchanged is the percentage reduction from
-section 5 (``-12.1%`` / ``-9.1%``), since it does not depend on any dollar
+section 6 (``-12.1%`` / ``-9.1%``), since it does not depend on any dollar
 assumption, and a real deployment runs many products through the same rule
 at once, so the dollar total scales with however many of them share this
 network.
 
-7. Try It Yourself
+8. Try It Yourself
 ----------------------
 
 .. code-block:: bash

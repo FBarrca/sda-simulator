@@ -69,10 +69,11 @@ is decided for real.
 
 ![Daily inventory dynamics](multi_echelon_inventory_trace.svg)
 
-The thick green line is one location's stock on hand; the dashed lines are
-its own trigger and target levels. Stock drifts down as demand is served,
-touches the trigger, a resupply order fires, and the line climbs back up
-once that shipment's real lead time has passed.
+The trace follows all five stocking nodes, with a small topology map on the
+right so the row numbers are easy to place in the network. Each row has its
+own scale; the green line is inventory position, the blue line is stock
+physically on hand, the dashed lines show that node's trigger and target,
+and the triangles mark inferred reorder days.
 
 ## Did It Work?
 

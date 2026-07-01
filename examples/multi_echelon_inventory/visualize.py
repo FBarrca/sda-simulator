@@ -353,17 +353,27 @@ def save_inventory_trace_plot(
     *,
     service_mode: ServiceMode = "lost_sales",
     trace_seed: int = 0,
-    focus_node: int = 2,
+    focus_node: int | None = None,
+    nodes: tuple[int, ...] | None = None,
     window_days: int = 120,
 ) -> Path:
-    """Plot one daily diagnostic trajectory, zoomed in for legibility.
+    """Plot daily policy diagnostics for multiple stocking nodes.
 
-    ``focus_node`` gets its reorder point and base stock drawn as dashed
-    reference lines so the hyperparameters that shape its sawtooth are visible
-    directly on the chart.
+    Each node gets its own row so the PFA is visible even when upstream and
+    downstream inventory levels live on very different scales.
     """
     output_path = Path(output)
     output_path.parent.mkdir(parents=True, exist_ok=True)
+    plotted_nodes = (
+        tuple(range(1, DEFAULT_NETWORK.shape[0]))
+        if nodes is None and focus_node is None
+        else ((focus_node,) if nodes is None else tuple(nodes))
+    )
+    if any(node is None for node in plotted_nodes):
+        raise ValueError("nodes must contain concrete node indexes")
+    if not plotted_nodes:
+        raise ValueError("at least one node must be plotted")
+
     data = MultiEchelonInventoryDataModule(
         n_scenarios=1,
         batch_size=1,
@@ -376,51 +386,71 @@ def save_inventory_trace_plot(
         use_published_solution=True,
         record_daily_metrics=True,
     )
-    _, times, total = result["total_on_hand"].to_trajectory_matrix()
-    total_values = total[0]
-    node_values = {
-        node: result[f"on_hand_inventory_node_{node}"].to_trajectory_matrix()[2][0]
-        for node in range(1, 6)
-    }
+    _, times, _ = result[
+        f"on_hand_inventory_node_{plotted_nodes[0]}"
+    ].to_trajectory_matrix()
 
     full_horizon = int(np.nanmax(times))
     window = times <= window_days
     windowed_times = times[window]
-    windowed_total = total_values[window]
-    windowed_nodes = {node: values[window] for node, values in node_values.items()}
 
-    chart = _line_chart(
+    traces: list[dict[str, object]] = []
+    for node in plotted_nodes:
+        on_hand_values = result[f"on_hand_inventory_node_{node}"].to_trajectory_matrix()[
+            2
+        ][0]
+        position_values = result[
+            f"inventory_position_node_{node}"
+        ].to_trajectory_matrix()[2][0]
+        reorder_point = float(policy.reorder_point[node])
+        traces.append(
+            {
+                "node": int(node),
+                "on_hand": on_hand_values[window],
+                "position": position_values[window],
+                "trigger": policy.reorder_tolerance * reorder_point,
+                "reorder_point": reorder_point,
+                "base_stock": float(policy.base_stock[node]),
+            }
+        )
+
+    chart = _multi_node_policy_trace_chart(
         windowed_times,
-        windowed_total,
-        windowed_nodes,
-        left=72,
-        top=150,
-        width=736,
-        height=250,
-        focus_node=focus_node,
-        reorder_point=float(policy.reorder_point[focus_node]),
-        base_stock=float(policy.base_stock[focus_node]),
+        traces,
+        left=112,
+        top=166,
+        width=706,
+        row_height=72,
+        row_gap=18,
+    )
+    topology = _trace_topology_inset(
+        DEFAULT_NETWORK,
+        plotted_nodes,
+        x=900,
+        y=166,
+        width=214,
+        height=432,
     )
     caption = _wrap_text(
         f"Published {service_mode.replace('_', '-')} policy, seed {trace_seed}. First "
-        f"{window_days} of {full_horizon} simulated days shown for legibility. Node "
-        f"{focus_node} (thick line) reorders up to its "
-        f"{policy.base_stock[focus_node]:.0f}-unit base stock (upper dashed line) "
-        "whenever inventory position falls to its "
-        f"{policy.reorder_point[focus_node]:.0f}-unit reorder point (lower dashed line).",
+        f"{window_days} of {full_horizon} simulated days shown for legibility. "
+        "Each row has its own y-scale so upstream and downstream stocking nodes "
+        "can be compared; the topology inset maps row numbers to echelon position.",
         x=48,
         first_y=90,
         line_height=16,
         max_chars=98,
         css_class="caption",
     )
+    height = 246 + len(traces) * 90
     body = f"""
-    <rect class="panel" x="24" y="24" width="884" height="442" rx="16" />
+    <rect class="panel" x="24" y="24" width="1132" height="{height - 48}" rx="16" />
     <text x="48" y="64" class="title">Daily inventory dynamics</text>
     {caption}
     {chart}
+    {topology}
     """
-    return _write_svg(output_path, 932, 490, body, _trace_style())
+    return _write_svg(output_path, 1180, height, body, _trace_style())
 
 
 def _objective_cases(*, replications: int) -> list[ObjectiveCase]:
@@ -477,114 +507,210 @@ def _service_level_rows(lost: ObjectiveCase, backorder: ObjectiveCase) -> str:
     return "".join(rows)
 
 
-def _line_chart(
+def _multi_node_policy_trace_chart(
     times: np.ndarray,
-    total_values: np.ndarray,
-    node_values: dict[int, np.ndarray],
+    traces: list[dict[str, object]],
     *,
     left: float,
     top: float,
     width: float,
-    height: float,
-    focus_node: int | None = None,
-    reorder_point: float | None = None,
-    base_stock: float | None = None,
+    row_height: float,
+    row_gap: float,
 ) -> str:
-    y_max = float(max(np.nanmax(total_values), *(np.nanmax(v) for v in node_values.values())))
-    if base_stock is not None:
-        y_max = max(y_max, base_stock * 1.08)
-    y_min = 0.0
     x_min = float(np.nanmin(times))
     x_max = float(np.nanmax(times))
-    colors = {
-        "total": "#0f172a",
-        1: "#2563eb",
-        2: "#16a34a",
-        3: "#f59e0b",
-        4: "#dc2626",
-        5: "#7c3aed",
-    }
 
     def sx(value: float) -> float:
         return left + (float(value) - x_min) / (x_max - x_min) * width
 
-    def sy(value: float) -> float:
-        return top + height - (float(value) - y_min) / (y_max - y_min) * height
-
-    grid = [
-        f'<line x1="{left}" y1="{top + height * index / 4}" x2="{left + width}" y2="{top + height * index / 4}" class="grid" />'
-        for index in range(5)
-    ]
-    lines = [
-        f'<polyline class="total-line" points="{_points(times, total_values, sx, sy)}" />'
-    ]
-    for node, values in node_values.items():
-        is_focus = node == focus_node
-        stroke_width = 3.2 if is_focus else 1.5
-        opacity = 1.0 if is_focus else 0.4
-        lines.append(
-            f'<polyline class="node-line" stroke="{colors[node]}" '
-            f'stroke-width="{stroke_width}" opacity="{opacity}" '
-            f'points="{_points(times, values, sx, sy)}" />'
+    rows: list[str] = []
+    for index, trace in enumerate(traces):
+        row_top = top + index * (row_height + row_gap)
+        row_bottom = row_top + row_height
+        on_hand = np.asarray(trace["on_hand"], dtype=float)
+        position = np.asarray(trace["position"], dtype=float)
+        trigger = float(trace["trigger"])
+        reorder_point = float(trace["reorder_point"])
+        base_stock = float(trace["base_stock"])
+        y_max = float(
+            max(
+                np.nanmax(on_hand),
+                np.nanmax(position),
+                base_stock * 1.08,
+                trigger * 1.08,
+            )
         )
 
-    reference: list[str] = []
-    if reorder_point is not None:
-        y = sy(reorder_point)
-        reference.append(
-            f'<line x1="{left}" y1="{y:.1f}" x2="{left + width}" y2="{y:.1f}" '
-            'class="reference-line rop" />'
-        )
-        reference.append(
-            f'<text x="{left + width + 8}" y="{y + 4:.1f}" class="reference-label">'
-            f"ROP {reorder_point:.0f}</text>"
-        )
-    if base_stock is not None:
-        y = sy(base_stock)
-        reference.append(
-            f'<line x1="{left}" y1="{y:.1f}" x2="{left + width}" y2="{y:.1f}" '
-            'class="reference-line stock" />'
-        )
-        reference.append(
-            f'<text x="{left + width + 8}" y="{y + 4:.1f}" class="reference-label">'
-            f"stock {base_stock:.0f}</text>"
+        def sy(value: float) -> float:
+            return row_bottom - float(value) / y_max * row_height
+
+        grid = [
+            f'<line x1="{left}" y1="{row_top + row_height * fraction:.1f}" '
+            f'x2="{left + width}" y2="{row_top + row_height * fraction:.1f}" '
+            'class="grid" />'
+            for fraction in (0.0, 0.5, 1.0)
+        ]
+        lines = [
+            f'<polyline class="position-line" points="{_points(times, position, sx, sy)}" />',
+            f'<polyline class="onhand-line" points="{_points(times, on_hand, sx, sy)}" />',
+        ]
+        trigger_y = sy(trigger)
+        target_y = sy(base_stock)
+        references = [
+            f'<line x1="{left}" y1="{trigger_y:.1f}" x2="{left + width}" '
+            f'y2="{trigger_y:.1f}" class="reference-line trigger" />',
+            f'<line x1="{left}" y1="{target_y:.1f}" x2="{left + width}" '
+            f'y2="{target_y:.1f}" class="reference-line stock" />',
+        ]
+
+        order_markers: list[str] = []
+        jumps = np.diff(position, prepend=position[0])
+        jump_threshold = max(1.0, base_stock * 0.01)
+        for day, value, jump in zip(times, position, jumps, strict=True):
+            if jump <= jump_threshold:
+                continue
+            x = sx(day)
+            y = sy(value)
+            order_markers.append(
+                f'<line x1="{x:.1f}" y1="{row_top}" x2="{x:.1f}" '
+                f'y2="{row_bottom}" class="order-line" />'
+            )
+            order_markers.append(
+                _order_marker(x, max(row_top + 2.0, y - 9.0), size=8.0)
+            )
+
+        node = int(trace["node"])
+        rows.append(
+            "".join(
+                [
+                    f'<text x="{left - 20}" y="{row_top + 18:.1f}" '
+                    f'class="node-row-label" text-anchor="end">Node {node}</text>',
+                    f'<text x="{left - 20}" y="{row_top + 38:.1f}" '
+                    f'class="node-row-detail" text-anchor="end">R {reorder_point:.0f} / B {base_stock:.0f}</text>',
+                    f'<text x="{left - 12}" y="{row_top + 6:.1f}" '
+                    f'class="tick">{y_max:.0f}</text>',
+                    *grid,
+                    f'<line x1="{left}" y1="{row_bottom}" x2="{left + width}" y2="{row_bottom}" class="axis" />',
+                    f'<line x1="{left}" y1="{row_top}" x2="{left}" y2="{row_bottom}" class="axis" />',
+                    *references,
+                    *order_markers,
+                    *lines,
+                    f'<text x="{left + width + 12}" y="{trigger_y + 4:.1f}" class="reference-label">trigger</text>',
+                    f'<text x="{left + width + 12}" y="{target_y + 4:.1f}" class="reference-label">target</text>',
+                ]
+            )
         )
 
-    legend_items = [
-        ("Total", colors["total"]),
-        ("Node 1", colors[1]),
-        ("Node 2", colors[2]),
-        ("Node 3", colors[3]),
-        ("Node 4", colors[4]),
-        ("Node 5", colors[5]),
+    final_bottom = top + (len(traces) - 1) * (row_height + row_gap) + row_height
+    legend_y = final_bottom + 44
+    legend = [
+        f'<line x1="{left}" y1="{legend_y}" x2="{left + 24}" y2="{legend_y}" class="position-swatch" />'
+        f'<text x="{left + 32}" y="{legend_y + 5}" class="legend">Inventory position</text>',
+        f'<line x1="{left + 190}" y1="{legend_y}" x2="{left + 214}" y2="{legend_y}" class="onhand-swatch" />'
+        f'<text x="{left + 222}" y="{legend_y + 5}" class="legend">On hand</text>',
+        f'<polygon points="{left + 334},{legend_y - 7} {left + 344},{legend_y - 7} {left + 339},{legend_y + 3}" class="order-marker" />'
+        f'<text x="{left + 354}" y="{legend_y + 5}" class="legend">Reorder fired</text>',
+        f'<line x1="{left + 500}" y1="{legend_y}" x2="{left + 524}" y2="{legend_y}" class="reference-line stock" />'
+        f'<text x="{left + 532}" y="{legend_y + 5}" class="legend">Target</text>',
+        f'<line x1="{left + 610}" y1="{legend_y}" x2="{left + 634}" y2="{legend_y}" class="reference-line trigger" />'
+        f'<text x="{left + 642}" y="{legend_y + 5}" class="legend">Trigger</text>',
     ]
-    legend = []
-    for index, (label, color) in enumerate(legend_items):
-        x = left + index * 118
-        y = top + height + 46
-        legend.append(
-            f'<line x1="{x}" y1="{y}" x2="{x + 24}" y2="{y}" stroke="{color}" stroke-width="3" />'
-            f'<text x="{x + 32}" y="{y + 5}" class="legend">{label}</text>'
+
+    return "".join(
+        [
+            *rows,
+            f'<text x="{left}" y="{final_bottom + 22}" class="tick start">day {int(x_min)}</text>',
+            f'<text x="{left + width}" y="{final_bottom + 22}" class="tick end">day {int(x_max)}</text>',
+            *legend,
+        ]
+    )
+
+
+def _trace_topology_inset(
+    network: np.ndarray,
+    plotted_nodes: tuple[int, ...],
+    *,
+    x: float,
+    y: float,
+    width: float,
+    height: float,
+) -> str:
+    network_array = np.asarray(network, dtype=int)
+    highlighted = set(plotted_nodes)
+    positions = {
+        0: (x + 34, y + 92),
+        1: (x + 94, y + 92),
+        2: (x + 164, y + 48),
+        3: (x + 164, y + 136),
+        4: (x + 94, y + 238),
+        5: (x + 164, y + 304),
+    }
+    labels = {
+        0: "source",
+        1: "regional",
+        2: "customer",
+        3: "transship",
+        4: "customer",
+        5: "customer",
+    }
+
+    edges: list[str] = [
+        '<defs><marker id="trace-topology-arrow" markerWidth="8" markerHeight="8" '
+        'refX="7" refY="4" orient="auto" markerUnits="strokeWidth">'
+        '<path d="M1,1 L7,4 L1,7 Z" class="topology-arrow" /></marker></defs>'
+    ]
+    for upstream, downstream in zip(*np.nonzero(network_array), strict=True):
+        if int(upstream) not in positions or int(downstream) not in positions:
+            continue
+        x1, y1 = positions[int(upstream)]
+        x2, y2 = positions[int(downstream)]
+        edges.append(
+            f'<line x1="{x1:.1f}" y1="{y1:.1f}" x2="{x2:.1f}" y2="{y2:.1f}" '
+            'class="topology-edge" marker-end="url(#trace-topology-arrow)" />'
+        )
+
+    nodes: list[str] = []
+    for node, (node_x, node_y) in positions.items():
+        if node == 0:
+            css_class = "source"
+        elif node in highlighted:
+            css_class = "plotted"
+        else:
+            css_class = "muted"
+        nodes.append(
+            f'<g class="topology-node {css_class}">'
+            f'<circle cx="{node_x:.1f}" cy="{node_y:.1f}" r="16" />'
+            f'<text x="{node_x:.1f}" y="{node_y + 4:.1f}" class="topology-node-id">{node}</text>'
+            f'<text x="{node_x:.1f}" y="{node_y + 32:.1f}" class="topology-node-label">'
+            f"{escape(labels[node])}</text>"
+            "</g>"
         )
 
     return "".join(
         [
-            *grid,
-            f'<line x1="{left}" y1="{top + height}" x2="{left + width}" y2="{top + height}" class="axis" />',
-            f'<line x1="{left}" y1="{top}" x2="{left}" y2="{top + height}" class="axis" />',
-            f'<text x="{left - 12}" y="{top + 6}" class="tick">{y_max:.0f}</text>',
-            f'<text x="{left - 12}" y="{top + height}" class="tick">0</text>',
-            f'<text x="{left}" y="{top + height + 24}" class="tick">day {int(x_min)}</text>',
-            f'<text x="{left + width}" y="{top + height + 24}" class="tick end">day {int(x_max)}</text>',
-            *lines,
-            *reference,
-            *legend,
+            '<g class="topology-inset">',
+            f'<line x1="{x - 24}" y1="{y - 8}" x2="{x - 24}" '
+            f'y2="{y + height - 22}" class="topology-divider" />',
+            f'<text x="{x}" y="{y + 2}" class="topology-title">Network topology</text>',
+            f'<text x="{x}" y="{y + 22}" class="topology-caption">'
+            "node rows map to this flow</text>",
+            "".join(edges),
+            "".join(nodes),
+            "</g>",
         ]
     )
 
 
 def _points(xs, ys, sx, sy) -> str:
     return " ".join(f"{sx(x):.1f},{sy(y):.1f}" for x, y in zip(xs, ys, strict=True))
+
+
+def _order_marker(x: float, y: float, *, size: float = 10.0) -> str:
+    half = size / 2.0
+    return (
+        f'<polygon points="{x - half:.1f},{y:.1f} {x + half:.1f},{y:.1f} '
+        f'{x:.1f},{y + size:.1f}" class="order-marker" />'
+    )
 
 
 def _wrap_text(
@@ -698,14 +824,32 @@ def _trace_style() -> str:
     return (
         _base_style()
         + """
-    .total-line { fill: none; stroke: #0f172a; stroke-width: 3.2; }
-    .node-line { fill: none; stroke-width: 1.7; opacity: 0.86; }
+    .position-line { fill: none; stroke: #15803d; stroke-width: 3.2; }
+    .onhand-line { fill: none; stroke: #2563eb; stroke-width: 2.2; opacity: 0.92; }
+    .position-swatch { stroke: #15803d; stroke-width: 3.2; }
+    .onhand-swatch { stroke: #2563eb; stroke-width: 2.2; }
     .legend { font-size: 12px; fill: #475569; }
+    .start { text-anchor: start; }
     .end { text-anchor: end; }
+    .node-row-label { font-size: 13px; font-weight: 700; }
+    .node-row-detail { font-size: 11px; fill: #64748b; }
     .reference-line { stroke-width: 1.6; stroke-dasharray: 6 5; }
-    .reference-line.rop { stroke: #dc2626; }
-    .reference-line.stock { stroke: #16a34a; }
+    .reference-line.trigger { stroke: #dc2626; }
+    .reference-line.stock { stroke: #0f172a; }
     .reference-label { font-size: 11px; font-weight: 700; fill: #334155; }
+    .order-line { stroke: #94a3b8; stroke-width: 1; opacity: 0.26; }
+    .order-marker { fill: #0f172a; opacity: 0.86; }
+    .topology-divider { stroke: #d8dee9; stroke-width: 1.2; }
+    .topology-title { font-size: 15px; font-weight: 700; }
+    .topology-caption { font-size: 11px; fill: #64748b; }
+    .topology-edge { stroke: #64748b; stroke-width: 2.1; opacity: 0.76; }
+    .topology-arrow { fill: #64748b; }
+    .topology-node circle { stroke-width: 1.8; }
+    .topology-node.source circle { fill: #f8fafc; stroke: #64748b; }
+    .topology-node.plotted circle { fill: #e0f2fe; stroke: #2563eb; }
+    .topology-node.muted circle { fill: #f1f5f9; stroke: #94a3b8; }
+    .topology-node-id { font-size: 13px; font-weight: 700; text-anchor: middle; }
+    .topology-node-label { font-size: 9px; fill: #475569; text-anchor: middle; }
     """
     )
 
