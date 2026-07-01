@@ -3,183 +3,150 @@
 This example reconstructs the simulation-optimization problem from
 Agarwal, A. (2019), [Multi-echelon Supply Chain Inventory Planning using
 Simulation-Optimization with Data Resampling](https://arxiv.org/abs/1901.00090)
-(arXiv:1901.00090), whose reference code is vendored at
-`multi-echelon-inventory-optimization/` in this repository, using SimPy for
-the discrete-event simulation machinery. The paper's network, base-stock
-rule, data-resampling approach, and objective are kept as-is; they are
-described and implemented here in SDA's `state` / `policy` / `model` /
-`data` / `recorder` terms (see `docs/concepts.rst`), with the reorder points
-and base-stock levels framed as a **policy function approximation** whose
-hyperparameters a black-box optimizer searches.
+(arXiv:1901.00090). The network, the reorder rule, the data, and the
+objective are kept as-is; this README walks through what the resulting
+tool does and why it is worth building, without assuming a technical
+background. (See `docs/examples/multi_echelon_inventory.rst` for the full
+walkthrough.)
 
-The business problem: one source ships a product through a small
-distribution network to customer-facing locations. Holding too much
-inventory anywhere ties up capital; holding too little causes stockouts at
-the nodes customers actually order from. The task is to find, per node, a
-reorder point and a base-stock level that meet every service target while
-tying up as little inventory as possible.
+## The Network And The Problem
 
-It keeps the reference problem structure:
-
-- Six-node supply-chain network with node `0` as the unconstrained source.
-- Base-stock policy with reorder points (a policy function approximation,
-  in the terminology from `docs/concepts.rst`).
-- Empirical bootstrap demand and lead-time-delay inputs.
-- Lost-sales and backorder service-level accounting modes.
-- The reference objective:
-
-  ```text
-  average on-hand inventory
-  + 1.0e6 * sum(max(0, service target - average service level))
-  ```
-
-The original SimPy processes are represented through SDA responsibilities:
-
-- `BaseStockReorderPolicy` owns the replenishment decision rule (the PFA)
-  and its ten hyperparameters: a reorder point and base-stock level per
-  stocking node.
-- `MultiEchelonInventoryModel` owns the SimPy processes, inventory
-  transitions, order queues, shipments, and diagnostics -- the emulator that
-  turns a hyperparameter vector into simulated on-hand inventory and service
-  levels.
-- `MultiEchelonInventoryDataModule` owns empirical scenario construction
-  (bootstrap resampling of real demand and lead-time-delay history).
-- `reference_metrics` lists the emitted reference metric names, and
-  `summarize_reference_result` reconstructs the original objective from SDA
-  metric records.
-
-## The Network
-
-One source feeds five stocking nodes over lanes with their own empirical
-lead times. Nodes 1, 2, 4, and 5 carry a 95% fill-rate target; node 3 is an
-intermediate transshipment point with no target of its own.
+A company ships one product from a single source through a small
+distribution network to the locations that sell to customers: one source,
+one regional stocking point, one intermediate transshipment point, and
+three locations that sell directly to customers.
 
 ![Multi-echelon supply network](multi_echelon_network.svg)
 
-## The Policy's Hyperparameters
+Every lane between two locations has its own delivery lead time, and it is
+not perfectly reliable -- it varies, based on real logged delivery history.
+Holding too much stock ties up cash that could be doing something else for
+the business; holding too little at a customer-facing location causes
+stockouts. The task is to decide, for every stocking location, how much of
+a buffer is actually worth carrying.
 
-Every stocking node runs the same rule: if inventory position falls to or
-below the node's reorder point, order up to its base-stock level. The ten
-numbers that define those thresholds per node are exactly what a black-box
-optimizer searches over. The chart below compares the optimizer's initial
-guess to the published, tuned solution:
+## What Happens Every Day
+
+The same four things happen every simulated day at every stocking location:
+
+1. **Check stock and decide whether to reorder** against a trigger level.
+2. **The upstream location prepares that order**, drawing from its own stock.
+3. **The order travels for its lead time**, drawn from real historical
+   delivery records, delays included.
+4. **Customers place demand**, served from whatever is on the shelf; unmet
+   demand is either lost for good or filled late, depending on which
+   business assumption is being tested.
+
+## The Policy We're Tuning: One Simple Rule
+
+Every stocking location runs the exact same rule: **when a location's
+available stock drops to its trigger level, order enough to bring it back
+up to its target level.** No forecast, no black-box model -- a rule an
+operations team can read, trust, and audit. In decision-science terms this
+is a **policy function approximation**.
+
+The rule becomes specific to each location through two numbers: its
+trigger level (reorder point) and target level (base stock) -- ten numbers
+total across the five stocking locations, and the only thing being tuned
+here.
 
 ![Reorder-point and base-stock hyperparameters](multi_echelon_policy_parameters.svg)
 
-Node 1, the regional stocking point with no customer-facing target of its
-own, is the most over-provisioned in the initial guess and gives up the most
-inventory after tuning. Nodes closer to their service target barely move.
+We tune these ten numbers for one reason: **to unlock capital sitting idle
+as excess stock, without letting customer service drop.** Every unit held
+above what a location truly needs is cash the business can't use elsewhere;
+every unit missing is a customer left unserved.
 
-## The Objective
+## Testing Changes Safely, With Real History
 
-The published SciPy solution vectors from the reference scripts reproduce the
-same objective values in SDA:
+Trying new numbers directly on the real supply chain is risky. Instead,
+this example runs the network inside a computer model and replays real
+historical demand and delivery data against it -- the same kind of order
+and delivery-delay history a company already holds in its own systems, not
+an invented average. A proposed set of ten numbers can be rehearsed against
+real, messy conditions as many times as needed, in minutes, before anything
+is decided for real.
 
-| Mode | Initial objective | Published objective | Change |
+![Daily inventory dynamics](multi_echelon_inventory_trace.svg)
+
+The thick green line is one location's stock on hand; the dashed lines are
+its own trigger and target levels. Stock drifts down as demand is served,
+touches the trigger, a resupply order fires, and the line climbs back up
+once that shipment's real lead time has passed.
+
+## Did It Work?
+
+Missing a service promise counts far more heavily than any inventory
+saved, so a good set of ten numbers has to protect service first and only
+then compete on how little stock it needs.
+
+| Mode | Starting point | Tuned result | Change |
 | --- | ---: | ---: | ---: |
 | Lost sales | `2783.462` | `2445.776` | `-12.1%` |
 | Backorder | `2767.635` | `2515.907` | `-9.1%` |
 
 ![Objective and service scorecard](multi_echelon_objective.svg)
 
-The scorecard is the main business value of the example: it shows that the
-optimized hyperparameter vectors reduce inventory while still clearing every
-measured service target, so the service penalty remains zero.
+The tuned numbers hold 9-12% less average stock and still clear every
+service target -- nothing was traded away to get there.
 
-## Watching The Policy Run
+## What This Is Worth In Dollars
 
-Daily diagnostics are opt-in because optimizers usually need only the scalar
-objective. When enabled, the trace below shows the network total and node
-2's on-hand inventory against its own reorder point and base-stock
-hyperparameters, drawn as reference lines, so the connection between the
-tuned numbers and the simulated sawtooth is visible directly:
+Turning that reduction into money needs two extra numbers for your own
+product: unit cost, and an annual holding-cost rate (typically 15-30%/year
+of unit cost).
 
-![Daily inventory dynamics](multi_echelon_inventory_trace.svg)
+| Mode | Stock reduction | Capital freed (@ $40/unit) | Ongoing savings (@ 25%/yr) |
+| --- | ---: | ---: | ---: |
+| Lost sales | `337.7` units | `$13,507` | `$3,377` / year |
+| Backorder | `251.7` units | `$10,069` | `$2,517` / year |
 
-Regenerate these SVGs with:
+Those two assumptions are illustrative, for one product on this six-node
+network -- substitute your own. The number that carries over unchanged is
+the percentage reduction (`-12.1%` / `-9.1%`), and a real deployment runs
+many products through the same rule at once, so the dollar total scales
+with however many share this network.
+
+## Try It Yourself
+
+```bash
+uv run -m examples.multi_echelon_inventory
+uv run -m examples.multi_echelon_inventory --mode backorder
+uv run -m examples.multi_echelon_inventory --published-solution
+```
+
+Regenerate the SVGs above from live evaluations with:
 
 ```bash
 python3 -m examples.multi_echelon_inventory.visualize
 ```
 
-## Why Simulate At All
+The copied empirical CSV inputs and `REFERENCE_LICENSE` come from the
+reference project and are included here so the example is self-contained.
 
-The SimPy model is a data-driven emulator: it resamples real historical
-demand and lead-time-delay observations (not an assumed distribution), runs
-the same 20 seeded replications for every candidate hyperparameter vector so
-comparisons are apples-to-apples, and reduces any ten-number vector to one
-scalar objective through `get_objective(...)` -- exactly the interface a
-black-box optimizer (`scipy.optimize`, `skopt.gp_minimize`, `rbfopt`, as used
-by the original reference scripts) needs to search the hyperparameter space
-without ever touching a live supply chain.
+## Why This Fits Inventory Planning, And Where To Take It Further
 
-## Standard SDA Flow
+Inventory planning is exactly the kind of problem this style of
+decision-making tool was built for: the decision repeats every single day,
+today's choice changes tomorrow's starting stock, and the future is
+genuinely uncertain rather than something a single forecast number can
+capture. Because the rule being tuned stays simple and explainable,
+operations staff can trust and audit it directly.
 
-The example can be run with the same data, model, evaluate shape as the other
-examples:
+This same approach extends well past the version shown here:
 
-```python
-from examples.multi_echelon_inventory import (
-    build_data,
-    build_model,
-    summarize_reference_result,
-)
-from sda import evaluate
-
-data = build_data(n_scenarios=20, batch_size=1)
-model = build_model()
-result = evaluate(model, data)
-summary = summarize_reference_result(result)
-```
-
-Run the default lost-sales initial-guess evaluation:
-
-```bash
-uv run -m examples.multi_echelon_inventory
-```
-
-Evaluate the backorder mode:
-
-```bash
-uv run -m examples.multi_echelon_inventory --mode backorder
-```
-
-Evaluate the published SciPy final solution vector from the reference scripts:
-
-```bash
-uv run -m examples.multi_echelon_inventory --published-solution
-```
-
-Objective evaluations are fast by default and emit the final objective,
-service-level, and average on-hand metrics. Dense per-day diagnostic traces are
-available when needed:
-
-```bash
-uv run -m examples.multi_echelon_inventory --daily-metrics
-```
-
-Programmatically, pass `record_daily_metrics=True` to `build_model`,
-`build_result`, `build_evaluation`, `evaluate_reference_policy`, or
-`get_objective` to include those daily traces.
-
-To wire this into an external black-box optimizer exactly like the original
-`getObj` reference function:
-
-```python
-from examples.multi_echelon_inventory import get_objective
-
-value = get_objective([2000, 350, 700, 150, 400, 1000, 250, 200, 150, 200])
-```
-
-The SDA version provides three practical improvements over the copied
-reference script:
-
-- the objective can be called directly from tests, docs, notebooks, or
-  black-box optimizers;
-- the policy (hyperparameters), model (network dynamics), empirical data, and
-  metric summary each live in one obvious place;
-- detailed daily traces are available for explanation without slowing normal
-  objective runs.
-
-The copied empirical CSV inputs and `REFERENCE_LICENSE` come from the reference
-project and are included here so the example is self-contained.
+- **More products at once** -- the same ten-numbers-per-location idea
+  scales to a full catalog.
+- **Fresher data, on a rolling basis** -- re-run regularly against demand
+  and delivery data pulled directly from the company's own systems, so the
+  rule keeps adapting as real patterns shift.
+- **Richer rules, tested the same safe way** -- test a smarter rule (one
+  that accounts for seasonality or a demand forecast) and simply compare
+  whether the added complexity earns a better result before committing.
+- **A wider view of cost** -- transportation cost, minimum order sizes, or
+  multiple sourcing options can all be added without changing how the rest
+  of the network works.
+- **An ongoing habit, not a one-time project** -- run alongside the real
+  network as a standing digital twin, quietly rehearsing changes so
+  retuning inventory policy becomes routine instead of a rare, high-stakes
+  project.
