@@ -237,8 +237,12 @@ def main(argv: list[str] | None = None) -> None:
 
     print(f"Mode: {args.mode}")
     print(f"Replications: {args.replications}")
-    print(f"Objective: {summary.objective:.3f}")
-    print(f"Average on-hand: {summary.average_on_hand:.3f}")
+    print(f"Objective: {summary.objective:.1f}")
+    low, high = summary.average_on_hand_ci95
+    print(
+        f"Average on-hand: {summary.average_on_hand:.1f} "
+        f"(95% CI {low:.1f}-{high:.1f} over {summary.n_replications} replications)"
+    )
     print(f"Service penalty: {summary.service_penalty:.3f}")
     print(
         "Service levels: "

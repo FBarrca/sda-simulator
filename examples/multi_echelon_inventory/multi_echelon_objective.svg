@@ -27,15 +27,15 @@
     <rect class="panel" x="24" y="24" width="920" height="562" rx="16" />
     <text x="48" y="64" class="title">Objective and service-level scorecard</text>
     <text x="48" y="91" class="caption">
-      Objective = average on-hand inventory + 1e6 x service shortfall. Published vectors reduce inventory while meeting targets.
+      Objective = average on-hand inventory + 1e6 x service shortfall. Bars are means over 20 replications; whiskers are 95% CIs. Published vectors reduce inventory while meeting targets.
     </text>
     <g class="axis">
       <line x1="72" y1="350" x2="568" y2="350" />
       <line x1="72" y1="112" x2="72" y2="350" />
-      <text x="60" y="122" class="tick">2783</text>
+      <text x="60" y="122" class="tick">2814</text>
       <text x="60" y="350" class="tick">0</text>
     </g>
-    <rect x="72.0" y="112.0" width="58" height="238.0" rx="5" fill="#64748b" /><text x="101.0" y="102.0" class="value">2783</text><text x="101.0" y="374" class="axis-label">Lost initial</text><rect x="172.0" y="113.4" width="58" height="236.6" rx="5" fill="#94a3b8" /><text x="201.0" y="103.4" class="value">2768</text><text x="201.0" y="374" class="axis-label">Backorder initial</text><rect x="272.0" y="140.9" width="58" height="209.1" rx="5" fill="#2563eb" /><text x="301.0" y="130.9" class="value">2446</text><text x="301.0" y="374" class="axis-label">Lost published</text><rect x="372.0" y="134.9" width="58" height="215.1" rx="5" fill="#16a34a" /><text x="401.0" y="124.9" class="value">2516</text><text x="401.0" y="374" class="axis-label">Backorder published</text>
+    <rect x="72.0" y="114.6" width="58" height="235.4" rx="5" fill="#64748b" /><text x="101.0" y="92.6" class="value">2783</text><text x="101.0" y="374" class="axis-label">Lost initial</text><g class="whisker" stroke="#0f172a" stroke-width="1.8" fill="none"><line x1="101.0" y1="112.0" x2="101.0" y2="117.1" /><line x1="92.0" y1="112.0" x2="110.0" y2="112.0" /><line x1="92.0" y1="117.1" x2="110.0" y2="117.1" /></g><rect x="172.0" y="115.9" width="58" height="234.1" rx="5" fill="#94a3b8" /><text x="201.0" y="93.9" class="value">2768</text><text x="201.0" y="374" class="axis-label">Backorder initial</text><g class="whisker" stroke="#0f172a" stroke-width="1.8" fill="none"><line x1="201.0" y1="112.8" x2="201.0" y2="119.0" /><line x1="192.0" y1="112.8" x2="210.0" y2="112.8" /><line x1="192.0" y1="119.0" x2="210.0" y2="119.0" /></g><rect x="272.0" y="143.1" width="58" height="206.9" rx="5" fill="#2563eb" /><text x="301.0" y="121.1" class="value">2446</text><text x="301.0" y="374" class="axis-label">Lost published</text><g class="whisker" stroke="#0f172a" stroke-width="1.8" fill="none"><line x1="301.0" y1="139.9" x2="301.0" y2="146.3" /><line x1="292.0" y1="139.9" x2="310.0" y2="139.9" /><line x1="292.0" y1="146.3" x2="310.0" y2="146.3" /></g><rect x="372.0" y="137.2" width="58" height="212.8" rx="5" fill="#16a34a" /><text x="401.0" y="115.2" class="value">2516</text><text x="401.0" y="374" class="axis-label">Backorder published</text><g class="whisker" stroke="#0f172a" stroke-width="1.8" fill="none"><line x1="401.0" y1="134.8" x2="401.0" y2="139.5" /><line x1="392.0" y1="134.8" x2="410.0" y2="134.8" /><line x1="392.0" y1="139.5" x2="410.0" y2="139.5" /></g>
     <g class="callout" transform="translate(620,122)">
       <text x="0" y="0" class="callout-title">Value from optimization</text>
       <text x="0" y="34">Lost sales: 12.1% less average inventory</text>

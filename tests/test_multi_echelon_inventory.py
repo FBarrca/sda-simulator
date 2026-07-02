@@ -94,6 +94,9 @@ def test_cli_daily_metrics_flag_wires_through(monkeypatch, capsys):
                 average_on_hand=2.0,
                 service_penalty=0.0,
                 service_level=np.zeros(6),
+                n_replications=3,
+                average_on_hand_std=0.0,
+                average_on_hand_ci95=(2.0, 2.0),
             ),
             policy=SimpleNamespace(
                 reorder_point=np.zeros(6),
@@ -107,7 +110,7 @@ def test_cli_daily_metrics_flag_wires_through(monkeypatch, capsys):
 
     assert captured["replications"] == 3
     assert captured["record_daily_metrics"] is True
-    assert "Objective: 1.000" in capsys.readouterr().out
+    assert "Objective: 1.0" in capsys.readouterr().out
 
 
 def test_multi_echelon_visualizations_are_generated(tmp_path):

@@ -45,6 +45,7 @@ class ObjectiveCase:
     service_penalty: float
     service_level: np.ndarray
     is_published: bool
+    ci95: tuple[float, float] = (0.0, 0.0)
 
 
 def save_all_visualizations(
@@ -282,7 +283,8 @@ def save_objective_plot(
     output_path = Path(output)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     cases = _objective_cases(replications=replications)
-    max_objective = max(case.objective for case in cases)
+    # Scale to the largest CI upper bound so the whiskers always fit inside the axis.
+    axis_max = max(max(case.objective, case.ci95[1]) for case in cases)
     chart_left = 72
     chart_top = 112
     chart_width = 496
@@ -296,20 +298,35 @@ def save_objective_plot(
         ("backorder", True): "#16a34a",
     }
 
+    def y_of(value: float) -> float:
+        return chart_top + chart_height - chart_height * value / axis_max
+
     bars: list[str] = []
     for index, case in enumerate(cases):
         x = chart_left + index * (bar_width + gap)
-        bar_height = chart_height * case.objective / max_objective
-        y = chart_top + chart_height - bar_height
+        center = x + bar_width / 2
+        y = y_of(case.objective)
         color = colors[(case.mode, case.is_published)]
         bars.append(
             f'<rect x="{x:.1f}" y="{y:.1f}" width="{bar_width}" '
-            f'height="{bar_height:.1f}" rx="5" fill="{color}" />'
-            f'<text x="{x + bar_width / 2:.1f}" y="{y - 10:.1f}" '
+            f'height="{chart_top + chart_height - y:.1f}" rx="5" fill="{color}" />'
+            f'<text x="{center:.1f}" y="{y - 22:.1f}" '
             f'class="value">{case.objective:.0f}</text>'
-            f'<text x="{x + bar_width / 2:.1f}" y="{chart_top + chart_height + 24}" '
+            f'<text x="{center:.1f}" y="{chart_top + chart_height + 24}" '
             f'class="axis-label">{escape(case.label)}</text>'
         )
+        # 95% confidence whisker over the bootstrap replications.
+        low, high = case.ci95
+        if high > low:
+            y_hi, y_lo = y_of(high), y_of(low)
+            cap = 9
+            bars.append(
+                f'<g class="whisker" stroke="#0f172a" stroke-width="1.8" fill="none">'
+                f'<line x1="{center:.1f}" y1="{y_hi:.1f}" x2="{center:.1f}" y2="{y_lo:.1f}" />'
+                f'<line x1="{center - cap:.1f}" y1="{y_hi:.1f}" x2="{center + cap:.1f}" y2="{y_hi:.1f}" />'
+                f'<line x1="{center - cap:.1f}" y1="{y_lo:.1f}" x2="{center + cap:.1f}" y2="{y_lo:.1f}" />'
+                f"</g>"
+            )
 
     initial_lost, initial_back, published_lost, published_back = cases
     lost_improvement = _improvement(initial_lost.objective, published_lost.objective)
@@ -322,12 +339,12 @@ def save_objective_plot(
     <rect class="panel" x="24" y="24" width="920" height="562" rx="16" />
     <text x="48" y="64" class="title">Objective and service-level scorecard</text>
     <text x="48" y="91" class="caption">
-      Objective = average on-hand inventory + 1e6 x service shortfall. Published vectors reduce inventory while meeting targets.
+      Objective = average on-hand inventory + 1e6 x service shortfall. Bars are means over 20 replications; whiskers are 95% CIs. Published vectors reduce inventory while meeting targets.
     </text>
     <g class="axis">
       <line x1="{chart_left}" y1="{chart_top + chart_height}" x2="{chart_left + chart_width}" y2="{chart_top + chart_height}" />
       <line x1="{chart_left}" y1="{chart_top}" x2="{chart_left}" y2="{chart_top + chart_height}" />
-      <text x="{chart_left - 12}" y="{chart_top + 10}" class="tick">{max_objective:.0f}</text>
+      <text x="{chart_left - 12}" y="{chart_top + 10}" class="tick">{axis_max:.0f}</text>
       <text x="{chart_left - 12}" y="{chart_top + chart_height}" class="tick">0</text>
     </g>
     {''.join(bars)}
@@ -477,6 +494,7 @@ def _objective_cases(*, replications: int) -> list[ObjectiveCase]:
                 service_penalty=evaluation.summary.service_penalty,
                 service_level=evaluation.summary.service_level,
                 is_published=use_published,
+                ci95=evaluation.summary.average_on_hand_ci95,
             )
         )
     return cases

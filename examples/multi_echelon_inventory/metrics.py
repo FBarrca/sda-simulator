@@ -12,13 +12,22 @@ from examples.multi_echelon_inventory.domain import (
 
 @dataclass(frozen=True)
 class ReferenceObjectiveSummary:
-    """Aggregate objective components matching the reference scripts."""
+    """Aggregate objective components matching the reference scripts.
+
+    The objective and ``average_on_hand`` are means over the seeded bootstrap
+    replications. ``average_on_hand_std`` and ``average_on_hand_ci95`` report the
+    spread of that mean across replications, so results can be quoted with an
+    uncertainty band rather than as a single point estimate.
+    """
 
     objective: float
     average_on_hand: float
     service_level: np.ndarray
     service_shortfall: np.ndarray
     service_penalty: float
+    n_replications: int = 0
+    average_on_hand_std: float = 0.0
+    average_on_hand_ci95: tuple[float, float] = (0.0, 0.0)
 
 
 def reference_metric_names(
@@ -85,13 +94,26 @@ def summarize_reference_result(
         ],
         dtype=float,
     )
-    average_on_hand = result["reference_average_on_hand"].trajectory_level().mean()
+    on_hand_per_replication = np.asarray(
+        result["reference_average_on_hand"].trajectory_level().values(), dtype=float
+    )
+    average_on_hand = float(on_hand_per_replication.mean())
+    n_replications = int(on_hand_per_replication.size)
+    if n_replications > 1:
+        std = float(on_hand_per_replication.std(ddof=1))
+        half_width = 1.96 * std / np.sqrt(n_replications)
+    else:
+        std = 0.0
+        half_width = 0.0
     service_shortfall = np.maximum(0.0, service_target_array - service_level)
     service_penalty = float(penalty_weight * np.sum(service_shortfall))
     return ReferenceObjectiveSummary(
         objective=float(average_on_hand + service_penalty),
-        average_on_hand=float(average_on_hand),
+        average_on_hand=average_on_hand,
         service_level=service_level,
         service_shortfall=service_shortfall,
         service_penalty=service_penalty,
+        n_replications=n_replications,
+        average_on_hand_std=std,
+        average_on_hand_ci95=(average_on_hand - half_width, average_on_hand + half_width),
     )
