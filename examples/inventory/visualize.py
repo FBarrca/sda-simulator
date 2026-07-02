@@ -337,16 +337,7 @@ def save_policy_sweep_plot(
     if reorder_points is None:
         reorder_points = np.arange(0.0, 61.0, 5.0)
 
-    mean_costs: list[float] = []
-    fill_rates: list[float] = []
-    for reorder_point in reorder_points:
-        result = _evaluate(
-            reorder_point=float(reorder_point),
-            order_up_to=float(reorder_point) + buffer,
-            n_scenarios=n_scenarios,
-        )
-        mean_costs.append(float(result["total_cost"].mean()))
-        fill_rates.append(float(result["fill_rate"].mean()))
+    mean_costs, fill_rates, _ = _sweep_reorder_points(reorder_points, buffer, n_scenarios)
 
     output_path = Path(output)
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -395,6 +386,109 @@ def save_policy_sweep_plot(
     return output_path
 
 
+def _sweep_reorder_points(reorder_points, buffer: float, n_scenarios: int):
+    """Evaluate a range of reorder points (target following at ``buffer`` above).
+
+    Returns arrays of mean total cost, mean fill rate, and mean on-hand inventory
+    -- shared by the sweep and the exchange-curve figures.
+    """
+    costs: list[float] = []
+    fills: list[float] = []
+    inventory: list[float] = []
+    for reorder_point in reorder_points:
+        result = _evaluate(
+            reorder_point=float(reorder_point),
+            order_up_to=float(reorder_point) + buffer,
+            n_scenarios=n_scenarios,
+        )
+        costs.append(float(result["total_cost"].mean()))
+        fills.append(float(result["fill_rate"].mean()))
+        inventory.append(float(result["inventory"].mean()))
+    return np.asarray(costs), np.asarray(fills), np.asarray(inventory)
+
+
+def _sweep_base_stock(levels, n_scenarios: int):
+    """Evaluate base-stock levels (order-up-to every period) -- the efficient
+    single-item family. Returns mean fill rate and mean on-hand inventory."""
+    fills: list[float] = []
+    inventory: list[float] = []
+    for level in levels:
+        # reorder point == target makes the order-up-to rule a daily base stock.
+        result = _evaluate(
+            reorder_point=float(level),
+            order_up_to=float(level),
+            n_scenarios=n_scenarios,
+        )
+        fills.append(float(result["fill_rate"].mean()))
+        inventory.append(float(result["inventory"].mean()))
+    return np.asarray(fills), np.asarray(inventory)
+
+
+def save_service_frontier_plot(
+    *,
+    base_stock_levels: np.ndarray | None = None,
+    n_scenarios: int = 400,
+    output: str | Path = DEFAULT_OUTPUT_DIR / "inventory_service_frontier.png",
+) -> Path:
+    """Inventory-service exchange curve: stock needed for each service level.
+
+    Built by sweeping the base-stock level ``S`` (the efficient single-item
+    family), so the curve traces the *minimum* inventory that achieves each fill
+    rate -- consistent with the demand-scaled and optimized policies elsewhere on
+    this page.
+    """
+    plt = _require_pyplot()
+    from matplotlib.ticker import PercentFormatter
+
+    if base_stock_levels is None:
+        base_stock_levels = np.arange(12.0, 61.0, 3.0)
+    fills, inventory = _sweep_base_stock(base_stock_levels, n_scenarios)
+
+    order = np.argsort(fills)
+    fills_sorted = fills[order]
+    inventory_sorted = inventory[order]
+
+    output_path = Path(output)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    fig, ax = plt.subplots(figsize=(11, 6))
+    ax.plot(fills_sorted, inventory_sorted, color=DEMAND_COLOR, linewidth=2.4,
+            marker="o", markersize=5)
+
+    # Efficient operating point: least stock that still achieves ~full service.
+    full = np.where(fills >= 0.995)[0]
+    if full.size:
+        knee = full[np.argmin(inventory[full])]
+        ax.scatter([fills[knee]], [inventory[knee]], color=ORDER_COLOR, s=150, zorder=5,
+                   edgecolor="white", linewidth=1.4,
+                   label=f"Efficient point: {inventory[knee]:.0f} units at {fills[knee]:.1%} fill")
+        ax.annotate(
+            "least stock for ~100% service;\nabove here, more stock buys no service",
+            xy=(fills[knee], inventory[knee]),
+            xytext=(-16, 40),
+            textcoords="offset points",
+            fontsize=9,
+            ha="right",
+            color="#0f172a",
+        )
+
+    ax.set_title(
+        f"Inventory-service exchange curve ({n_scenarios} scenarios)",
+        fontsize=15,
+        fontweight="bold",
+    )
+    ax.set_xlabel("Achieved fill rate")
+    ax.set_ylabel("Average inventory (working capital, units)")
+    ax.xaxis.set_major_formatter(PercentFormatter(1.0))
+    ax.grid(True, color=GRID_COLOR, linewidth=0.8)
+    ax.legend(frameon=False, fontsize=10, loc="upper left")
+
+    fig.tight_layout()
+    fig.savefig(output_path, dpi=180)
+    plt.close(fig)
+    return output_path
+
+
 def save_all_visualizations(output_dir: str | Path = DEFAULT_OUTPUT_DIR) -> list[Path]:
     """Regenerate every inventory figure into ``output_dir``."""
     output_dir = Path(output_dir)
@@ -404,6 +498,7 @@ def save_all_visualizations(output_dir: str | Path = DEFAULT_OUTPUT_DIR) -> list
         save_trace_comparison_plot(output=output_dir / "inventory_trace_comparison.png"),
         save_cost_distribution_plot(output=output_dir / "inventory_cost_distribution.png"),
         save_policy_sweep_plot(output=output_dir / "inventory_policy_sweep.png"),
+        save_service_frontier_plot(output=output_dir / "inventory_service_frontier.png"),
     ]
 
 

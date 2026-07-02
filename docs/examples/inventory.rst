@@ -431,7 +431,21 @@ number of items that share it.
 --------------------
 
 The scorecard is built to answer one question -- *which policy should we
-deploy?* -- through whichever lens governs the decision:
+deploy?* -- but before choosing a policy it helps to see the price of the
+*service target* itself. Sweeping the base-stock level traces the
+**inventory-service exchange curve**: the minimum stock needed to reach each
+fill rate.
+
+.. image:: ../../examples/inventory/inventory_service_frontier.png
+   :alt: Inventory-service exchange curve: minimum average inventory needed to achieve each fill rate
+
+It is a hockey stick. Reaching ~99% fill costs only a handful of units; past the
+knee (~9-12 units here) additional stock buys essentially no service -- it just
+adds working capital. That knee is exactly where the demand-scaled and optimized
+policies land, and it is the region any sensible policy should target.
+
+With the efficient zone identified, read the scorecard through whichever lens
+governs the decision:
 
 * **Capital-constrained:** read ``inv_mean`` and the freed-capital table;
   ``demand_scaled`` and ``optimized`` release the most working capital.

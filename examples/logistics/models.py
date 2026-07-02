@@ -42,6 +42,7 @@ class LogisticsModel(SDAModel):
         unit_handling_cost: float = 1.2,
         late_cost_per_priority_unit_day: float = 32.0,
         backlog_cost_per_priority_day: float = 2.0,
+        waiting_cost_per_priority_day: float = 0.0,
         invalid_assignment_cost: float = 20.0,
     ) -> None:
         super().__init__(policy)
@@ -49,6 +50,9 @@ class LogisticsModel(SDAModel):
         self.unit_handling_cost = float(unit_handling_cost)
         self.late_cost_per_priority_unit_day = float(late_cost_per_priority_unit_day)
         self.backlog_cost_per_priority_day = float(backlog_cost_per_priority_day)
+        # Per-day charge on *every* waiting order, not only overdue ones. Default
+        # 0.0 keeps the reference objective; raising it prices backlog properly.
+        self.waiting_cost_per_priority_day = float(waiting_cost_per_priority_day)
         self.invalid_assignment_cost = float(invalid_assignment_cost)
         bind_rollout_model = getattr(policy, "bind_rollout_model", None)
         if callable(bind_rollout_model):
@@ -207,6 +211,7 @@ class LogisticsModel(SDAModel):
             max(0, state.time + 1 - order.deadline)
             * order.priority
             * self.backlog_cost_per_priority_day
+            + order.priority * self.waiting_cost_per_priority_day
             for order in pending_after
         )
         invalid_assignment_cost = invalid_assignments * self.invalid_assignment_cost

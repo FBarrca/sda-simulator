@@ -18,6 +18,7 @@ def build_result(
     n_scenarios: int = 500,
     batch_size: int = 64,
     seed: int = 42,
+    waiting_cost_per_priority_day: float = 0.0,
 ) -> SimulationResult:
     data = LogisticsDataModule(
         horizon=horizon,
@@ -25,7 +26,10 @@ def build_result(
         batch_size=batch_size,
         seed=seed,
     )
-    model = LogisticsModel(policy=policy or PriorityPolicy())
+    model = LogisticsModel(
+        policy=policy or PriorityPolicy(),
+        waiting_cost_per_priority_day=waiting_cost_per_priority_day,
+    )
     return evaluate(model, data)
 
 
